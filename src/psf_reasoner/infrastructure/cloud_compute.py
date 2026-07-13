@@ -32,13 +32,8 @@ class HttpCloudAdapter:
     def fpocket(self, structure: StructureInput) -> tuple[PhysicalEvidence, ...]:
         return self._call("fpocket", structure)
 
-    def apbs_electrostatics(self, structure: StructureInput) -> tuple[PhysicalEvidence, ...]:
-        return self._call("apbs", structure)
-
-    def gromacs_mmgbsa(
-        self, reference: StructureInput, mutant: StructureInput
-    ) -> tuple[PhysicalEvidence, ...]:
-        return self._call("gromacs-mmgbsa", reference, params={"mutant_path": mutant.path})
+    def coulomb(self, structure: StructureInput) -> tuple[PhysicalEvidence, ...]:
+        return self._call("coulomb", structure)
 
     def _call(
         self, tool: str, structure: StructureInput, params: dict | None = None

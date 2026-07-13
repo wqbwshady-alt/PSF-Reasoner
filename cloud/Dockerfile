@@ -5,7 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
-# Build FPocket from bundled source (no network needed)
+# Build FPocket from bundled source
 COPY fpocket-src /tmp/fpocket
 RUN cd /tmp/fpocket && make && cp bin/fpocket /usr/local/bin/ && rm -rf /tmp/fpocket
 
