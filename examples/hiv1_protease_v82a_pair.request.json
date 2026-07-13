@@ -1,0 +1,25 @@
+{
+  "structure": {
+    "path": "examples/data/1sdt.cif",
+    "format": "mmcif",
+    "model_index": 0
+  },
+  "mutant_structure": {
+    "path": "examples/data/1sdv.cif",
+    "format": "mmcif",
+    "model_index": 0
+  },
+  "ligand": {
+    "identifier": "MK1"
+  },
+  "mutation": {
+    "notation": "V82A",
+    "chain": "A"
+  },
+  "phenotype": {
+    "name": "drug_resistance",
+    "direction": "increase"
+  },
+  "study_context": "HIV-1 protease V82A paired crystal-structure example"
+}
+

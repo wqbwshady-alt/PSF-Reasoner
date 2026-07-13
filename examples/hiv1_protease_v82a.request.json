@@ -1,0 +1,19 @@
+{
+  "structure": {
+    "path": "examples/data/1hsg.cif",
+    "format": "mmcif",
+    "model_index": 0
+  },
+  "ligand": {
+    "identifier": "MK1"
+  },
+  "mutation": {
+    "notation": "V82A",
+    "chain": "A"
+  },
+  "phenotype": {
+    "name": "drug_resistance",
+    "direction": "increase"
+  },
+  "study_context": "HIV-1 protease inhibitor resistance baseline case"
+}
