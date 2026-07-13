@@ -26,6 +26,9 @@ dev = [
   "pytest-cov>=6,<7",
   "ruff>=0.9,<1",
 ]
+llm = [
+  "anthropic>=0.60,<1",
+]
 
 [project.scripts]
 psf = "psf_reasoner.cli:app"

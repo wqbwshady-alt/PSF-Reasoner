@@ -27,16 +27,37 @@ from psf_reasoner.reasoning.baseline import (
     BaselineForwardReasoner,
     BaselineReverseReasoner,
 )
+from psf_reasoner.reasoning.llm_reasoner import (
+    LLMConsistencyChecker,
+    LLMForwardReasoner,
+    LLMReverseReasoner,
+)
+from psf_reasoner.reasoning.ports import LLMProvider
 
 
-def create_default_service() -> AnalysisService:
+def create_default_service(
+    *,
+    llm_provider: LLMProvider | None = None,
+) -> AnalysisService:
     """Return an AnalysisService wired with all baseline providers and reasoners.
 
-    Evidence providers are composed in registration order.  The baseline
-    reasoner is the only engine active — future LLM / hybrid reasoners will
-    be wired here as alternative or complementary implementations of the
-    same ForwardReasoner / ReverseReasoner / ConsistencyChecker protocols.
+    When *llm_provider* is given (or ``PSF_LLM=1`` is set and an
+    ``ANTHROPIC_API_KEY`` is available), the LLM reasoning engine is used
+    instead of the deterministic baseline.  Otherwise the baseline engine
+    serves as the default.
     """
+    if llm_provider is None:
+        llm_provider = _auto_llm_provider()
+
+    if llm_provider is not None:
+        forward_reasoner = LLMForwardReasoner(llm_provider)
+        reverse_reasoner = LLMReverseReasoner(llm_provider)
+        consistency_checker = LLMConsistencyChecker(llm_provider)
+    else:
+        forward_reasoner = BaselineForwardReasoner()
+        reverse_reasoner = BaselineReverseReasoner()
+        consistency_checker = BaselineConsistencyChecker()
+
     return AnalysisService(
         evidence_provider=CompositeEvidenceProvider(
             MutationPropertyEvidenceProvider(),
@@ -46,14 +67,18 @@ def create_default_service() -> AnalysisService:
             LocalEnergyEvidenceProvider(),
             HIVProteaseCalibrationProvider(),
         ),
-        forward_reasoner=BaselineForwardReasoner(),
-        reverse_reasoner=BaselineReverseReasoner(),
-        consistency_checker=BaselineConsistencyChecker(),
+        forward_reasoner=forward_reasoner,
+        reverse_reasoner=reverse_reasoner,
+        consistency_checker=consistency_checker,
         mutation_modeler=LocalSideChainMutationModeler(),
     )
 
 
-def create_default_runner(*, persist: bool | None = None) -> AnalysisRunner:
+def create_default_runner(
+    *,
+    persist: bool | None = None,
+    llm_provider: LLMProvider | None = None,
+) -> AnalysisRunner:
     """Return an AnalysisRunner backed by inline execution.
 
     By default persistence is in-memory.  When *persist* is ``True`` (or
@@ -66,7 +91,24 @@ def create_default_runner(*, persist: bool | None = None) -> AnalysisRunner:
     repository = SqliteReportRepository() if persist else InMemoryReportRepository()
 
     return AnalysisRunner(
-        service=create_default_service(),
+        service=create_default_service(llm_provider=llm_provider),
         execution=InlineExecutionBackend(),
         reports=repository,
     )
+
+
+# ---------------------------------------------------------------------------
+# Internal
+# ---------------------------------------------------------------------------
+
+
+def _auto_llm_provider() -> LLMProvider | None:
+    """Create an Anthropic provider when ``PSF_LLM=1`` and a key is set."""
+    if os.environ.get("PSF_LLM") != "1":
+        return None
+    try:
+        from psf_reasoner.infrastructure.anthropic_provider import AnthropicProvider
+
+        return AnthropicProvider()
+    except Exception:
+        return None

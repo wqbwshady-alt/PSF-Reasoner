@@ -34,8 +34,7 @@ class SqliteReportRepository:
         serialised = report.model_dump_json()
         with self._lock, self._connection() as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO reports(report_id, generated_at, mode, payload) "
-                "VALUES (?, ?, ?, ?)",
+                "INSERT OR REPLACE INTO reports(report_id, generated_at, mode, payload) VALUES (?, ?, ?, ?)",
                 (
                     report.report_id,
                     report.generated_at.isoformat(),
@@ -46,9 +45,7 @@ class SqliteReportRepository:
 
     def get(self, report_id: str) -> PSFReport:
         with self._lock, self._connection() as conn:
-            row = conn.execute(
-                "SELECT payload FROM reports WHERE report_id = ?", (report_id,)
-            ).fetchone()
+            row = conn.execute("SELECT payload FROM reports WHERE report_id = ?", (report_id,)).fetchone()
         if row is None:
             raise ReportNotFoundError(report_id)
         return PSFReport.model_validate_json(row[0])
@@ -56,9 +53,7 @@ class SqliteReportRepository:
     def list_ids(self) -> tuple[str, ...]:
         """Return all stored report IDs, most recent first."""
         with self._lock, self._connection() as conn:
-            rows = conn.execute(
-                "SELECT report_id FROM reports ORDER BY generated_at DESC"
-            ).fetchall()
+            rows = conn.execute("SELECT report_id FROM reports ORDER BY generated_at DESC").fetchall()
         return tuple(row[0] for row in rows)
 
     def delete(self, report_id: str) -> bool:
@@ -87,10 +82,7 @@ class SqliteReportRepository:
                 "  payload      TEXT NOT NULL"
                 ")"
             )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_reports_generated_at "
-                "ON reports(generated_at DESC)"
-            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_reports_generated_at ON reports(generated_at DESC)")
 
     def _connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self._db_path))
