@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from psf_reasoner.application.ports import ReportLookupError, StructureInputError
 from psf_reasoner.application.runner import AnalysisRunnerProtocol
 from psf_reasoner.bootstrap import create_default_runner
+from psf_reasoner.infrastructure.uploads import maintain_uploads
 from psf_reasoner.schemas.inputs import (
     AnalysisRequest,
     LigandSpec,
@@ -97,6 +98,15 @@ def create_app(runner: AnalysisRunnerProtocol | None = None) -> FastAPI:
             return active_runner.get_report(report_id)
         except ReportLookupError as error:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="report not found") from error
+
+    @api.post("/admin/maintain-uploads")
+    def maintain_uploads_endpoint() -> dict:
+        """Remove expired and excess upload files.  Idempotent."""
+        result = maintain_uploads(UPLOAD_DIR)
+        return {"status": "ok", **result}
+
+    # Run upload maintenance once at startup.
+    maintain_uploads(UPLOAD_DIR)
 
     api.mount("/client", StaticFiles(directory=STATIC_DIR), name="client")
     return api

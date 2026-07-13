@@ -5,10 +5,15 @@ Only delivery adapters (CLI, API) and tests should depend on the factory
 functions defined here.
 """
 
+from __future__ import annotations
+
+import os
+
 from psf_reasoner.application.runner import AnalysisRunner
 from psf_reasoner.application.service import AnalysisService
 from psf_reasoner.infrastructure.execution import InlineExecutionBackend
 from psf_reasoner.infrastructure.repository import InMemoryReportRepository
+from psf_reasoner.infrastructure.sqlite_repository import SqliteReportRepository
 from psf_reasoner.physical.base import CompositeEvidenceProvider
 from psf_reasoner.physical.baseline import MutationPropertyEvidenceProvider
 from psf_reasoner.physical.calibration import HIVProteaseCalibrationProvider
@@ -48,14 +53,20 @@ def create_default_service() -> AnalysisService:
     )
 
 
-def create_default_runner() -> AnalysisRunner:
-    """Return an AnalysisRunner backed by inline execution and in-memory storage.
+def create_default_runner(*, persist: bool | None = None) -> AnalysisRunner:
+    """Return an AnalysisRunner backed by inline execution.
 
-    Replace the execution backend and repository with queue / database
-    adapters when moving beyond single-process local use.
+    By default persistence is in-memory.  When *persist* is ``True`` (or
+    unset and the ``PSF_PERSIST`` env var is ``"1"``) reports are stored
+    in SQLite under ``.psf_reasoner/reports.db`` so they survive restarts.
     """
+    if persist is None:
+        persist = os.environ.get("PSF_PERSIST") == "1"
+
+    repository = SqliteReportRepository() if persist else InMemoryReportRepository()
+
     return AnalysisRunner(
         service=create_default_service(),
         execution=InlineExecutionBackend(),
-        reports=InMemoryReportRepository(),
+        reports=repository,
     )
