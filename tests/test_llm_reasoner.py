@@ -46,57 +46,51 @@ def _default_forward_output() -> dict:
     return {
         "mechanisms": [
             {
-                "title": "Pocket packing loss at V82A",
-                "description": (
-                    "V82A truncation reduces side-chain volume, weakening hydrophobic contacts with MK1."
-                ),
+                "title": "V82A 导致口袋堆积减弱",
+                "description": "V82A 截断减少了侧链体积，削弱了与 MK1 的疏水接触。",
                 "mechanism_type": "pocket_packing",
                 "direction": "decrease",
-                "affected_region": "V82-MK1 contact shell",
+                "affected_region": "V82-MK1 接触壳层",
                 "confidence": 0.72,
                 "evidence_ids": ["evidence-dummy-001"],
-                "limitations": ["Ensemble effects not sampled."],
+                "limitations": ["未采样构象系综效应。"],
             },
             {
-                "title": "Ligand anchoring maintained",
-                "description": ("Key H-bonds between MK1 and catalytic aspartates are unaffected by V82A."),
+                "title": "配体锚定保持稳定",
+                "description": "MK1 与催化天冬氨酸之间的关键氢键未受 V82A 影响。",
                 "mechanism_type": "ligand_anchoring",
                 "direction": "unchanged",
-                "affected_region": "catalytic site",
+                "affected_region": "催化位点",
                 "confidence": 0.68,
                 "evidence_ids": ["evidence-dummy-002"],
-                "limitations": ["Hydrogen positions are inferred."],
+                "limitations": ["氢原子位置为推断值。"],
             },
         ],
         "hypotheses": [
             {
-                "title": "Moderate MK1 affinity decrease",
-                "description": (
-                    "Loss of hydrophobic packing without compensatory polar contacts suggests weaker binding."
-                ),
+                "title": "MK1 亲和力中度下降",
+                "description": "疏水堆积丧失而无极性接触补偿，提示结合减弱。",
                 "function_type": "ligand_affinity",
                 "direction": "decrease",
                 "confidence": 0.58,
                 "mechanism_ids": ["mechanism-placeholder-001"],
-                "limitations": ["Entropic compensation unknown."],
+                "limitations": ["熵补偿效应未知。"],
             },
         ],
         "missing_evidence": [
             {
                 "evidence_type": "energy_component",
-                "reason": "No binding free energy calculation available.",
-                "impact": "Cannot quantify affinity change.",
+                "reason": "无可用的结合自由能计算。",
+                "impact": "无法量化亲和力变化。",
             },
         ],
         "validation_steps": [
             {
                 "priority": 1,
                 "kind": "binding_assay",
-                "objective": "Measure WT vs V82A MK1 binding affinity.",
-                "method": "ITC or SPR under matched conditions.",
-                "expected_result": (
-                    "V82A should show moderately reduced affinity if packing hypothesis is correct."
-                ),
+                "objective": "测量 WT 与 V82A 的 MK1 结合亲和力。",
+                "method": "在匹配条件下进行 ITC 或 SPR 实验。",
+                "expected_result": "如果堆积假设正确，V82A 应显示中等程度的亲和力降低。",
             },
         ],
     }
@@ -106,30 +100,30 @@ def _default_reverse_output() -> dict:
     return {
         "candidates": [
             {
-                "title": "Pocket packing disruption",
-                "description": "V82A in the binding pocket could weaken inhibitor contacts.",
+                "title": "口袋堆积破坏",
+                "description": "结合口袋中 V82A 可能削弱抑制剂接触。",
                 "mechanism_type": "pocket_packing",
                 "expected_evidence_types": ["residue_contact", "pocket_geometry", "energy_component"],
                 "rank": 1,
                 "confidence": 0.65,
-                "limitations": ["Other resistance mechanisms not ruled out."],
+                "limitations": ["其他耐药机制未被排除。"],
             },
         ],
         "required_evidence_types": ["residue_contact", "pocket_geometry", "energy_component"],
         "missing_evidence": [
             {
                 "evidence_type": "energy_component",
-                "reason": "Binding energetics not computed.",
-                "impact": "Cannot confirm resistance mechanism.",
+                "reason": "结合能量未计算。",
+                "impact": "无法确认耐药机制。",
             },
         ],
         "validation_steps": [
             {
                 "priority": 1,
                 "kind": "mutant_modelling",
-                "objective": "Compare WT and mutant contact maps.",
-                "method": "MD relaxation + contact analysis.",
-                "expected_result": "Altered contacts would support packing mechanism.",
+                "objective": "比较 WT 和突变体接触图谱。",
+                "method": "MD 弛豫 + 接触分析。",
+                "expected_result": "接触改变将支持堆积机制。",
             },
         ],
     }
@@ -175,7 +169,7 @@ class TestLLMForwardReasoner:
         assert len(result.mechanisms) == 2
         assert result.mechanisms[0].mechanism_type == MechanismType.POCKET_PACKING
         assert result.mechanisms[0].confidence <= 0.95
-        assert result.mechanisms[0].title == "Pocket packing loss at V82A"
+        assert "V82A" in result.mechanisms[0].title
         assert result.mechanisms[0].provenance  # LLM provenance must be present
 
     def test_generates_functional_hypotheses(self, forward_request: AnalysisRequest) -> None:

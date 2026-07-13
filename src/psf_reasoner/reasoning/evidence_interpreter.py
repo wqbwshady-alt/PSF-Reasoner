@@ -1,4 +1,4 @@
-"""Format physical evidence for LLM consumption."""
+"""Format physical evidence for LLM consumption (Chinese output)."""
 
 from __future__ import annotations
 
@@ -10,12 +10,7 @@ def format_evidence_for_llm(
     request: AnalysisRequest,
     evidence: tuple[PhysicalEvidence, ...],
 ) -> str:
-    """Produce a structured text block describing all available evidence.
-
-    The output is designed to be included in an LLM user prompt.  Each
-    evidence item is rendered with its status, type, measurement, and
-    confidence so the model can weigh conflicting or low-quality signals.
-    """
+    """Produce a structured Chinese text block describing all available evidence."""
     computed = [e for e in evidence if e.status is EvidenceStatus.COMPUTED]
     inferred = [e for e in evidence if e.status is EvidenceStatus.INFERRED]
     required = [e for e in evidence if e.status is EvidenceStatus.REQUIRED]
@@ -26,39 +21,39 @@ def format_evidence_for_llm(
     ]
 
     lines: list[str] = [
-        "## Analysis Context",
-        f"Ligand: {request.ligand.identifier}",
+        "## 分析上下文",
+        f"配体: {request.ligand.identifier}",
     ]
     if request.mutation is not None:
-        lines.append(f"Mutation: {request.mutation.notation}")
+        lines.append(f"突变: {request.mutation.notation}")
         if request.mutation.chain:
-            lines.append(f"Chain: {request.mutation.chain}")
+            lines.append(f"链: {request.mutation.chain}")
     if request.phenotype is not None:
-        lines.append(f"Phenotype: {request.phenotype.name}")
+        lines.append(f"表型: {request.phenotype.name}")
     if request.study_context:
-        lines.append(f"Study context: {request.study_context}")
+        lines.append(f"研究背景: {request.study_context}")
     lines.append("")
 
     if computed:
-        lines.append("## Computed Physical Evidence")
+        lines.append("## 计算得到的物理证据")
         lines.append("")
         for i, item in enumerate(computed, start=1):
             lines.append(_format_item(i, item))
 
     if inferred:
-        lines.append("## Inferred Evidence (prior-based)")
+        lines.append("## 推断证据（基于先验知识）")
         lines.append("")
         for i, item in enumerate(inferred, start=1):
             lines.append(_format_item(i, item))
 
     if required:
-        lines.append("## Required Evidence (reverse-predicted, not yet measured)")
+        lines.append("## 需要的证据（反向预测，尚未测量）")
         lines.append("")
         for i, item in enumerate(required, start=1):
             lines.append(_format_item(i, item))
 
     if other:
-        lines.append("## Other Evidence")
+        lines.append("## 其他证据")
         for i, item in enumerate(other, start=1):
             lines.append(_format_item(i, item))
 
@@ -66,17 +61,17 @@ def format_evidence_for_llm(
 
 
 def format_context_for_llm(request: AnalysisRequest) -> str:
-    """Brief protein/ligand/mutation context for the system prompt."""
+    """Brief context for the system prompt."""
     parts = []
     if request.mutation is not None:
-        parts.append(f"analysing mutation {request.mutation.notation}")
+        parts.append(f"分析突变 {request.mutation.notation}")
     if request.ligand is not None:
-        parts.append(f"ligand {request.ligand.identifier}")
+        parts.append(f"配体 {request.ligand.identifier}")
     if request.phenotype is not None:
-        parts.append(f"phenotype={request.phenotype.name}")
+        parts.append(f"表型={request.phenotype.name}")
     if request.study_context:
-        parts.append(f"context: {request.study_context}")
-    return "; ".join(parts) if parts else "protein-ligand analysis"
+        parts.append(f"背景: {request.study_context}")
+    return "; ".join(parts) if parts else "蛋白质-配体分析"
 
 
 def _format_item(index: int, item: PhysicalEvidence) -> str:
@@ -87,21 +82,21 @@ def _format_item(index: int, item: PhysicalEvidence) -> str:
         if m.unit:
             parts.append(f" {m.unit}")
         if m.direction is not None:
-            parts.append(f" (direction: {m.direction.value})")
+            parts.append(f" (方向: {m.direction.value})")
         if m.reference_value is not None:
-            parts.append(f" [reference: {m.reference_value}]")
+            parts.append(f" [参考值: {m.reference_value}]")
         measurement = "".join(parts)
 
     lines = [
         f"### {index}. {item.title}",
-        f"Type: {item.evidence_type.value}",
-        f"Status: {item.status.value}",
-        f"Confidence: {item.confidence}",
+        f"类型: {item.evidence_type.value}",
+        f"状态: {item.status.value}",
+        f"置信度: {item.confidence}",
     ]
     if measurement:
-        lines.append(f"Measurement: {measurement}")
-    lines.append(f"Description: {item.description}")
+        lines.append(f"测量值: {measurement}")
+    lines.append(f"描述: {item.description}")
     if item.limitations:
-        lines.append(f"Limitations: {'; '.join(item.limitations)}")
+        lines.append(f"局限性: {'; '.join(item.limitations)}")
     lines.append("")
     return "\n".join(lines)
