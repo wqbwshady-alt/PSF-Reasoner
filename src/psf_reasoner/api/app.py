@@ -111,7 +111,12 @@ def create_app(runner: AnalysisRunnerProtocol | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="structure file not found")
         try:
             structure = gemmi.read_structure(str(file_path))
-            pdb_text = structure.make_pdb()
+            pdb_text = structure.make_minimal_pdb()
+            # Strip ANISOU lines (3Dmol.js can choke on them)
+            lines = [line for line in pdb_text.splitlines() if not line.startswith("ANISOU")]
+            if lines and not lines[-1].startswith("END"):
+                lines.append("END")
+            pdb_text = "\n".join(lines)
         except Exception as e:
             raise HTTPException(status_code=422, detail=f"failed to read structure: {e}") from e
         return PlainTextResponse(pdb_text, media_type="text/plain")

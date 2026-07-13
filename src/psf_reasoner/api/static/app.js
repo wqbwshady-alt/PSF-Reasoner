@@ -33,11 +33,16 @@ let viewerMode = "reference";
 
 function initViewer() {
   if (viewer) return;
-  viewer = $3Dmol.createViewer(elements.viewer3d, {
-    backgroundColor: "white",
-    antialias: true,
-  });
-  viewer.resize();
+  try {
+    viewer = $3Dmol.createViewer("viewer-3d", {
+      backgroundColor: "white",
+      antialias: true,
+    });
+  } catch (e) {
+    console.error("3Dmol init failed:", e);
+    showError("3D viewer failed to initialize. Check browser console.");
+    return;
+  }
 }
 
 async function loadStructureData(structurePath) {
@@ -49,61 +54,76 @@ async function loadStructureData(structurePath) {
 async function showStructure(structurePathOnServer, mutationChain, mutationResNum, ligandId) {
   elements.viewerPanel.classList.remove("hidden");
   initViewer();
-  viewer.removeAllSurfaces();
-  viewer.removeAllModels();
+  if (!viewer) return;
 
-  const pdbText = await loadStructureData(structurePathOnServer);
-  if (viewerMode === "reference") referenceData = pdbText;
-  else mutantData = pdbText;
+  try {
+    viewer.removeAllSurfaces();
+    viewer.removeAllModels();
 
-  viewer.addModel(pdbText, "pdb");
+    const pdbText = await loadStructureData(structurePathOnServer);
+    if (viewerMode === "reference") referenceData = pdbText;
+    else mutantData = pdbText;
 
-  // Protein cartoon
-  viewer.setStyle({ chain: mutationChain || undefined }, { cartoon: { color: "spectrum" } });
+    viewer.addModel(pdbText, "pdb");
 
-  // Mutation site (red sphere on CA)
-  if (mutationResNum) {
-    viewer.setStyle(
-      { chain: mutationChain || undefined, resi: mutationResNum },
-      { cartoon: { color: "#ff6b6b" }, stick: { radius: 0.35, color: "#ff6b6b" } }
-    );
-  }
+    // Protein cartoon
+    viewer.setStyle({ chain: mutationChain || undefined }, { cartoon: { color: "spectrum" } });
 
-  // Ligand (teal sticks)
-  if (ligandId) {
-    viewer.setStyle(
-      { resn: ligandId.toUpperCase() },
-      { stick: { radius: 0.25, color: "#4ecdc4" } }
-    );
-  }
+    // Mutation site (red sphere on CA)
+    if (mutationResNum) {
+      viewer.setStyle(
+        { chain: mutationChain || undefined, resi: mutationResNum },
+        { cartoon: { color: "#ff6b6b" }, stick: { radius: 0.35, color: "#ff6b6b" } }
+      );
+    }
 
-  // Contact residues within 5A of ligand (yellow highlight)
-  const ligandAtoms = viewer.getModel().selectedAtoms({ resn: ligandId.toUpperCase() });
-  if (ligandAtoms && ligandAtoms.length > 0) {
-    const nearby = viewer.getModel().selectedAtoms({
-      resn: ligandId.toUpperCase(),
-      byres: true,
-      expand: 5,
-    });
-    if (nearby) {
-      const nearbyResidues = new Set();
-      for (const atom of nearby) {
-        if (atom.resn !== ligandId.toUpperCase() && atom.resn !== "HOH") {
-          nearbyResidues.add(`${atom.chain}:${atom.resi}`);
+    // Ligand (teal sticks)
+    if (ligandId) {
+      viewer.setStyle(
+        { resn: ligandId.toUpperCase() },
+        { stick: { radius: 0.25, color: "#4ecdc4" } }
+      );
+    }
+
+    // Contact residues within 5A of ligand (yellow highlight)
+    try {
+      const model = viewer.getModel();
+      if (model) {
+        const ligandAtoms = model.selectedAtoms({ resn: ligandId.toUpperCase() });
+        if (ligandAtoms && ligandAtoms.length > 0) {
+          const nearby = model.selectedAtoms({
+            resn: ligandId.toUpperCase(),
+            byres: true,
+            expand: 5,
+          });
+          if (nearby) {
+            const nearbyResidues = new Set();
+            for (const atom of nearby) {
+              if (atom.resn !== ligandId.toUpperCase() && atom.resn !== "HOH") {
+                nearbyResidues.add(`${atom.chain}:${atom.resi}`);
+              }
+            }
+            for (const key of nearbyResidues) {
+              const [chain, resi] = key.split(":");
+              viewer.setStyle(
+                { chain, resi },
+                { stick: { radius: 0.15, color: "#ffe66d" }, cartoon: { color: "#ffe66d", opacity: 0.5 } }
+              );
+            }
+          }
         }
       }
-      for (const key of nearbyResidues) {
-        const [chain, resi] = key.split(":");
-        viewer.setStyle(
-          { chain, resi },
-          { stick: { radius: 0.15, color: "#ffe66d" }, cartoon: { color: "#ffe66d", opacity: 0.5 } }
-        );
-      }
+    } catch (e) {
+      console.warn("Contact residue highlighting skipped:", e);
     }
-  }
 
-  viewer.zoomTo();
-  viewer.render();
+    viewer.zoomTo();
+    viewer.render();
+    viewer.resize();
+  } catch (e) {
+    console.error("Structure rendering failed:", e);
+    showError("Failed to render 3D structure: " + e.message);
+  }
 }
 
 function switchViewerMode(mode) {
