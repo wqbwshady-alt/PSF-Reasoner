@@ -221,8 +221,19 @@ def _type_ligand_atom(
         if aromatic
         else 0.30
     )
+    # Crystal structures frequently lack explicit H.  For nitrogen with
+    # 1–2 heavy-atom neighbours (sp/sp²), assume donor capability — the
+    # missing H is likely present but unresolved.  Nitrogen with ≥3
+    # heavy neighbours is fully substituted and cannot donate.
+    # Oxygen/sulfur are conservative: only donors with explicit H or
+    # formal charge (carbonyl/ether are almost never donors).
+    n_donor = is_nitrogen and (
+        bonded_hydrogen or atom.formal_charge > 0 or (bool(neighbors) and len(neighbors) < 3)
+    )
+    os_donor = (is_oxygen or is_sulfur) and (bonded_hydrogen or atom.formal_charge > 0)
+    likely_donor = n_donor or os_donor
     return AtomTyping(
-        donor=(is_oxygen or is_nitrogen or is_sulfur) and (bonded_hydrogen or atom.formal_charge > 0),
+        donor=likely_donor,
         acceptor=is_oxygen or is_sulfur,
         positive=atom.formal_charge > 0,
         negative=atom.formal_charge < 0,
@@ -354,15 +365,97 @@ def _passes_hydrogen_bond_geometry(
     donor = protein_atom if protein_type.donor else ligand_atom
     acceptor = ligand_atom if protein_type.donor else protein_atom
     donor_residue = residue if protein_type.donor else ligand
+
+    # Prefer explicit hydrogens
     hydrogens = tuple(
         atom
         for atom in donor_residue.atoms
         if atom.element in {"D", "H"} and atom_distance(atom, donor) <= 1.25
     )
-    if not hydrogens:
-        return True
-    return any(
-        _angle_degrees(donor, hydrogen, acceptor) >= HYDROGEN_BOND_MIN_ANGLE_DEGREES for hydrogen in hydrogens
+    if hydrogens:
+        return any(
+            _angle_degrees(donor, hydrogen, acceptor) >= HYDROGEN_BOND_MIN_ANGLE_DEGREES
+            for hydrogen in hydrogens
+        )
+
+    # No explicit H — estimate H position from donor geometry
+    estimated_h = _estimate_hydrogen_position(donor, donor_residue)
+    if estimated_h is not None:
+        angle = _angle_degrees(estimated_h, donor, acceptor)
+        if angle >= HYDROGEN_BOND_MIN_ANGLE_DEGREES:
+            return True
+
+    # Fallback: use heavy-atom base–donor–acceptor angle as a proxy.
+    # If the donor's base points toward the acceptor, geometry is acceptable
+    # even when the H-position estimate is imprecise.
+    bases = _donor_base_atoms(donor, donor_residue)
+    if not bases:
+        return True  # cannot judge — conservative accept
+    for base in bases:
+        base_angle = _angle_degrees(base, donor, acceptor)
+        if base_angle >= 90.0:  # relaxed vs 110° H-bond minimum
+            return True
+    return False
+
+
+def _donor_base_atoms(donor: AtomRecord, residue: ResidueRecord) -> list[AtomRecord]:
+    """Return heavy atoms bonded to *donor* (the 'base' for angle proxy)."""
+    return [
+        atom
+        for atom in residue.atoms
+        if atom.element not in {"D", "H"}
+        and atom.label != donor.label
+        and _likely_bonded(donor, atom)
+    ]
+
+
+def _estimate_hydrogen_position(donor: AtomRecord, residue: ResidueRecord) -> AtomRecord | None:
+    """Estimate the polar hydrogen position from heavy-atom geometry.
+
+    - 1 base atom (e.g. hydroxyl O–H): H is placed opposite the base.
+    - 2 base atoms (sp², e.g. backbone N–H): H is placed in the plane
+      bisecting the two bond directions.
+    - ≥3 base atoms: the donor is fully substituted → no H (returns None).
+    """
+    bases = [
+        atom
+        for atom in residue.atoms
+        if atom.element not in {"D", "H"}
+        and atom.label != donor.label
+        and _likely_bonded(donor, atom)
+    ]
+    if not bases or len(bases) >= 3:
+        return None
+
+    if len(bases) == 1:
+        b = bases[0]
+        dx = donor.x - b.x
+        dy = donor.y - b.y
+        dz = donor.z - b.z
+    else:
+        # Two bases: place H opposite to their bisector
+        b1, b2 = bases[0], bases[1]
+        v1 = (donor.x - b1.x, donor.y - b1.y, donor.z - b1.z)
+        v2 = (donor.x - b2.x, donor.y - b2.y, donor.z - b2.z)
+        dx = v1[0] + v2[0]
+        dy = v1[1] + v2[1]
+        dz = v1[2] + v2[2]
+
+    length = (dx * dx + dy * dy + dz * dz) ** 0.5
+    if length < 0.001:
+        return None
+
+    scale = 1.0 / length
+    return AtomRecord(
+        residue=donor.residue,
+        name="H_est",
+        element="H",
+        x=donor.x + dx * scale,
+        y=donor.y + dy * scale,
+        z=donor.z + dz * scale,
+        occupancy=1.0,
+        altloc=None,
+        formal_charge=0,
     )
 
 
