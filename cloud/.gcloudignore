@@ -1,0 +1,4 @@
+# Include everything needed for the build
+# Exclude git metadata only
+.git
+.gitignore

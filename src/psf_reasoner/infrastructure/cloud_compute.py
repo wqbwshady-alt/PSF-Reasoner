@@ -8,6 +8,7 @@ Heavy computation runs on Google Cloud Run and returns PhysicalEvidence.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import httpx
 
@@ -45,7 +46,12 @@ class HttpCloudAdapter:
         if not self._base_url:
             return ()
 
-        body: dict = {"structure_path": structure.path}
+        # Read structure and convert to PDB for cloud consumption
+        path = Path(structure.path)
+        raw = path.read_text()
+        pdb_data = _to_pdb(raw)
+
+        body: dict = {"pdb_data": pdb_data}
         if params:
             body["params"] = params
 
@@ -57,3 +63,19 @@ class HttpCloudAdapter:
         response.raise_for_status()
         items = response.json()
         return tuple(PhysicalEvidence.model_validate(item) for item in items)
+
+
+def _to_pdb(text: str) -> str:
+    """Convert CIF/mmCIF to minimal PDB if needed; strip ANISOU."""
+    stripped = text.lstrip()
+    if not stripped.startswith(("data_", "DATA_", "loop_", "LOOP_", "#")):
+        return text  # already PDB
+
+    import gemmi
+
+    structure = gemmi.read_structure_string(text)
+    pdb = structure.make_minimal_pdb()
+    lines = [line for line in pdb.splitlines() if not line.startswith("ANISOU")]
+    if lines and not lines[-1].startswith("END"):
+        lines.append("END")
+    return "\n".join(lines)

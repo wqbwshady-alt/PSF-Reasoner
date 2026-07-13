@@ -26,7 +26,8 @@ from pydantic import BaseModel, Field
 
 
 class CloudComputeRequest(BaseModel):
-    structure_path: str = Field(..., description="Path to PDB/mmCIF file")
+    structure_path: str | None = Field(None, description="Path to PDB/mmCIF file (server-side)")
+    pdb_data: str | None = Field(None, description="Inline PDB text (preferred for cloud)")
     params: dict = Field(default_factory=dict)
 
 
@@ -75,12 +76,30 @@ def compute_fpocket(req: CloudComputeRequest) -> list[CloudEvidenceItem]:
     if not FPOCKET_AVAILABLE:
         raise HTTPException(501, "fpocket is not installed on this instance")
 
-    input_path = Path(req.structure_path)
-    if not input_path.is_file():
-        raise HTTPException(404, f"structure not found: {input_path}")
-
     work_dir = Path(tempfile.mkdtemp(prefix="fpocket_"))
     run_id = uuid.uuid4().hex[:12]
+
+    # Resolve structure input (inline PDB preferred, convert from CIF if needed)
+    if req.pdb_data:
+        input_path = work_dir / "input.pdb"
+        raw = req.pdb_data
+        # Convert CIF to PDB via gemmi
+        if raw.lstrip().startswith(("data_", "DATA_", "loop_", "LOOP_", "#")):
+            import gemmi
+            struct = gemmi.read_structure_from_string(raw)
+            raw = struct.make_minimal_pdb()
+            # Strip ANISOU
+            lines = [l for l in raw.splitlines() if not l.startswith("ANISOU")]
+            if lines and not lines[-1].startswith("END"):
+                lines.append("END")
+            raw = "\n".join(lines)
+        input_path.write_text(raw)
+    elif req.structure_path:
+        input_path = Path(req.structure_path)
+        if not input_path.is_file():
+            raise HTTPException(404, f"structure not found: {input_path}")
+    else:
+        raise HTTPException(400, "pdb_data or structure_path is required")
 
     try:
         result = subprocess.run(
@@ -99,7 +118,7 @@ def compute_fpocket(req: CloudComputeRequest) -> list[CloudEvidenceItem]:
         _rmtree_safe(work_dir)
 
     return [CloudEvidenceItem(
-        id=f"cloud-fpocket-{run_id}",
+        id=f"cloud_fpocket-{run_id}",
         title="FPocket cavity analysis",
         description=f"Detected {pockets.get('num_pockets', 0)} pockets. "
         f"Largest pocket volume: {pockets.get('max_volume', 0):.1f} A3. "
@@ -116,7 +135,6 @@ def compute_fpocket(req: CloudComputeRequest) -> list[CloudEvidenceItem]:
             "kind": "computation",
             "source": "FPocket (Cloud Run)",
             "method": "Voronoi-based cavity detection",
-            "parameters": {"input": str(input_path)},
         }],
         limitations=[
             "FPocket uses a fixed probe radius; very shallow pockets may be missed.",
