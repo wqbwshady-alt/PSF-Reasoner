@@ -10,7 +10,7 @@ Supported tools:
 
 from __future__ import annotations
 
-import json
+import shutil
 import subprocess
 import tempfile
 import uuid
@@ -52,9 +52,15 @@ class CloudEvidenceItem(BaseModel):
 app = FastAPI(title="PSF Cloud Compute", version="0.1.0")
 
 
+FPOCKET_AVAILABLE = shutil.which("fpocket") is not None
+
+
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "tools": ["fpocket"]}
+    tools = []
+    if FPOCKET_AVAILABLE:
+        tools.append("fpocket")
+    return {"status": "ok", "tools": tools}
 
 
 # ---------------------------------------------------------------------------
@@ -66,6 +72,9 @@ def health() -> dict:
 def compute_fpocket(req: CloudComputeRequest) -> list[CloudEvidenceItem]:
     """Run FPocket on the supplied structure."""
 
+    if not FPOCKET_AVAILABLE:
+        raise HTTPException(501, "fpocket is not installed on this instance")
+
     input_path = Path(req.structure_path)
     if not input_path.is_file():
         raise HTTPException(404, f"structure not found: {input_path}")
@@ -74,7 +83,6 @@ def compute_fpocket(req: CloudComputeRequest) -> list[CloudEvidenceItem]:
     run_id = uuid.uuid4().hex[:12]
 
     try:
-        # fpocket -f <pdb> -o <outdir>
         result = subprocess.run(
             ["fpocket", "-f", str(input_path), "-o", str(work_dir)],
             capture_output=True,
@@ -84,7 +92,6 @@ def compute_fpocket(req: CloudComputeRequest) -> list[CloudEvidenceItem]:
         if result.returncode != 0:
             raise HTTPException(422, f"fpocket failed: {result.stderr}")
 
-        # Parse fpocket output
         pockets = _parse_fpocket_output(work_dir, input_path.stem)
     except subprocess.TimeoutExpired:
         raise HTTPException(504, "fpocket timed out after 120s")
@@ -95,7 +102,7 @@ def compute_fpocket(req: CloudComputeRequest) -> list[CloudEvidenceItem]:
         id=f"cloud-fpocket-{run_id}",
         title="FPocket cavity analysis",
         description=f"Detected {pockets.get('num_pockets', 0)} pockets. "
-        f"Largest pocket volume: {pockets.get('max_volume', 0):.1f} Å³. "
+        f"Largest pocket volume: {pockets.get('max_volume', 0):.1f} A3. "
         f"Druggability score: {pockets.get('max_druggability_score', 0):.2f}.",
         evidence_type="pocket_geometry",
         status="computed",
