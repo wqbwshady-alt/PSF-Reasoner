@@ -217,6 +217,7 @@ function renderPreparation(items) {
 }
 
 function renderReport(report) {
+  elements.loading.classList.add("hidden");
   const computed = report.physical_evidence.filter(item => item.status === "computed");
   const contact = computed.find(item => item.measurement?.name === "contact_state_delta");
   const distance = computed.find(item => item.measurement?.name === "nearest_heavy_atom_distance_delta");
@@ -291,6 +292,7 @@ async function runExample() {
   } catch (error) {
     showError(error.message);
   } finally {
+    elements.loading.classList.add("hidden");
     elements.example.disabled = false;
     elements.submit.disabled = false;
   }
@@ -307,6 +309,7 @@ elements.form.addEventListener("submit", async event => {
   } catch (error) {
     showError(error.message);
   } finally {
+    elements.loading.classList.add("hidden");
     elements.example.disabled = false;
     elements.submit.disabled = false;
   }
