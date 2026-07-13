@@ -92,6 +92,20 @@ def create_app(runner: AnalysisRunnerProtocol | None = None) -> FastAPI:
         )
         return _run(active_runner, request)
 
+    @api.post("/reverse-upload", response_model=PSFReport)
+    async def reverse_upload(
+        reference_file: Annotated[UploadFile, File(description="WT/reference PDB or mmCIF")],
+        ligand: Annotated[str, Form()],
+        phenotype: Annotated[str, Form()],
+    ) -> PSFReport:
+        reference_path = await _store_upload(reference_file)
+        request = AnalysisRequest(
+            structure=StructureInput(path=str(reference_path)),
+            ligand=LigandSpec(identifier=ligand),
+            phenotype=PhenotypeSpec(name=phenotype),
+        )
+        return _run(active_runner, request)
+
     @api.get("/reports/{report_id}", response_model=PSFReport)
     def get_report(report_id: str) -> PSFReport:
         try:

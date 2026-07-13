@@ -18,37 +18,50 @@
           <p class="eyebrow">蛋白质-配体分析</p>
           <h1>物理 · 结构 · 功能</h1>
         </div>
-        <button class="example-button" id="run-example" type="button">运行 HIV-1 V82A 示例</button>
-        <div class="divider"><span>或上传本地结构文件</span></div>
+        <button class="example-button" id="run-example" type="button">双向示例 HIV-1 V82A</button>
+        <button class="example-button" id="run-reverse-example" type="button" style="margin-top:6px">反向示例 耐药性推理</button>
+        <div class="divider"><span>或自定义分析参数</span></div>
         <form id="analysis-form">
+          <div class="mode-selector" id="mode-selector">
+            <label class="mode-option active" data-mode="bidirectional">
+              <input type="radio" name="analysis-mode" value="bidirectional" checked /> 双向 P⇄F
+            </label>
+            <label class="mode-option" data-mode="forward">
+              <input type="radio" name="analysis-mode" value="forward" /> 正向 P→F
+            </label>
+            <label class="mode-option" data-mode="reverse">
+              <input type="radio" name="analysis-mode" value="reverse" /> 反向 F→P
+            </label>
+          </div>
           <label class="file-field">
             <span>参考结构 (野生型)</span>
-            <input id="reference-file" name="reference_file" type="file" accept=".pdb,.cif,.mmcif" required />
+            <input id="reference-file" name="reference_file" type="file" accept=".pdb,.cif,.mmcif" />
           </label>
-          <label class="file-field">
+          <label class="file-field" id="mutant-file-group">
             <span>突变体结构 <em>可选</em></span>
             <input id="mutant-file" name="mutant_file" type="file" accept=".pdb,.cif,.mmcif" />
           </label>
-          <div class="field-grid">
+          <div class="field-grid" id="mutation-fields">
             <label>
               <span>配体</span>
-              <input id="ligand" name="ligand" value="MK1" autocomplete="off" required />
+              <input id="ligand" name="ligand" value="MK1" autocomplete="off" />
             </label>
             <label>
               <span>突变</span>
-              <input id="mutation" name="mutation" value="V82A" autocomplete="off" required />
+              <input id="mutation" name="mutation" value="V82A" autocomplete="off" />
             </label>
           </div>
           <div class="field-grid">
-            <label>
+            <label id="chain-group">
               <span>蛋白链</span>
               <input id="chain" name="chain" value="A" autocomplete="off" />
             </label>
-            <label>
-              <span>表型 <em>可选</em></span>
+            <label id="phenotype-group">
+              <span>表型</span>
               <select id="phenotype" name="phenotype">
-                <option value="">仅正向推理</option>
                 <option value="drug_resistance">耐药性</option>
+                <option value="activity_loss">活性丧失</option>
+                <option value="stability_change">稳定性变化</option>
               </select>
             </label>
           </div>

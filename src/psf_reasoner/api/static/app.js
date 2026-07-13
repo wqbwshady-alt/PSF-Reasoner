@@ -7,9 +7,17 @@ const examplePayload = {
   study_context: "HIV-1 蛋白酶 V82A 配対晶体结构示例"
 };
 
+const reverseExamplePayload = {
+  structure: { path: "examples/data/1sdt.cif", format: "mmcif", model_index: 0 },
+  ligand: { identifier: "MK1" },
+  phenotype: { name: "drug_resistance", direction: "increase" },
+  study_context: "HIV-1 蛋白酶 — 从耐药性表型反向推理结构机制"
+};
+
 const elements = {
   form: document.querySelector("#analysis-form"),
   example: document.querySelector("#run-example"),
+  reverseExample: document.querySelector("#run-reverse-example"),
   status: document.querySelector("#api-status"),
   empty: document.querySelector("#empty-state"),
   loading: document.querySelector("#loading-state"),
@@ -277,6 +285,49 @@ function renderReport(report) {
 }
 
 // ---------------------------------------------------------------------------
+// 模式切换
+// ---------------------------------------------------------------------------
+
+let analysisMode = "bidirectional";
+
+document.querySelectorAll(".mode-option").forEach(opt => {
+  opt.addEventListener("click", () => {
+    document.querySelectorAll(".mode-option").forEach(o => o.classList.remove("active"));
+    opt.classList.add("active");
+    analysisMode = opt.dataset.mode;
+    updateFormForMode();
+  });
+});
+
+function updateFormForMode() {
+  const mutFields = document.querySelector("#mutation-fields");
+  const mutantFileGroup = document.querySelector("#mutant-file-group");
+  const chainGroup = document.querySelector("#chain-group");
+  const mutation = document.querySelector("#mutation");
+  const chain = document.querySelector("#chain");
+  const reference = document.querySelector("#reference-file");
+
+  if (analysisMode === "reverse") {
+    mutFields.style.opacity = "0.4";
+    mutFields.style.pointerEvents = "none";
+    if (mutantFileGroup) { mutantFileGroup.style.opacity = "0.4"; mutantFileGroup.style.pointerEvents = "none"; }
+    mutation.required = false;
+    chain.required = false;
+    mutation.value = "";
+    chain.value = "";
+    reference.required = true;
+  } else {
+    mutFields.style.opacity = "1";
+    mutFields.style.pointerEvents = "auto";
+    if (mutantFileGroup) { mutantFileGroup.style.opacity = "1"; mutantFileGroup.style.pointerEvents = "auto"; }
+    mutation.required = analysisMode !== "reverse";
+    reference.required = true;
+    if (!mutation.value) mutation.value = "V82A";
+    if (!chain.value) chain.value = "A";
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 操作
 // ---------------------------------------------------------------------------
 
@@ -298,19 +349,41 @@ async function runExample() {
   }
 }
 
+async function runReverseExample() {
+  setLoading(true);
+  try {
+    const report = await requestJson("/reverse", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(reverseExamplePayload),
+    });
+    renderReport(report);
+  } catch (error) {
+    showError(error.message);
+  } finally {
+    elements.loading.classList.add("hidden");
+    elements.reverseExample.disabled = false;
+    elements.submit.disabled = false;
+  }
+}
+
 elements.example.addEventListener("click", runExample);
+elements.reverseExample.addEventListener("click", runReverseExample);
+
 elements.form.addEventListener("submit", async event => {
   event.preventDefault();
   setLoading(true);
   try {
     const formData = new FormData(elements.form);
-    const report = await requestJson("/analyze-upload", { method: "POST", body: formData });
+    const endpoint = analysisMode === "reverse" ? "/reverse-upload" : "/analyze-upload";
+    const report = await requestJson(endpoint, { method: "POST", body: formData });
     renderReport(report);
   } catch (error) {
     showError(error.message);
   } finally {
     elements.loading.classList.add("hidden");
     elements.example.disabled = false;
+    elements.reverseExample.disabled = false;
     elements.submit.disabled = false;
   }
 });

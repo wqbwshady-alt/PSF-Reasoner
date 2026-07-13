@@ -82,6 +82,12 @@ h2 { font-size: 23px; line-height: 1.22; }
 .divider { display: flex; align-items: center; gap: 10px; margin: 25px 0 19px; color: var(--muted); font-size: 12px; }
 .divider::before, .divider::after { content: ""; height: 1px; background: var(--line); flex: 1; }
 
+.mode-selector { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; margin-bottom: 4px; }
+.mode-option { flex: 1; padding: 8px 6px; text-align: center; font-size: 12px; font-weight: 650; cursor: pointer; background: white; color: var(--muted); border-right: 1px solid var(--line); transition: background 0.15s; }
+.mode-option:last-child { border-right: 0; }
+.mode-option input { display: none; }
+.mode-option.active { background: var(--teal); color: white; }
+
 form { display: grid; gap: 16px; }
 label { display: grid; gap: 7px; color: #34434b; font-size: 13px; font-weight: 650; }
 label em { color: var(--muted); font-style: normal; font-weight: 500; }
