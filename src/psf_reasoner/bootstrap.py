@@ -103,12 +103,25 @@ def create_default_runner(
 
 
 def _auto_llm_provider() -> LLMProvider | None:
-    """Create an Anthropic provider when ``PSF_LLM=1`` and a key is set."""
+    """Create an LLM provider when ``PSF_LLM=1``.
+
+    Provider selection (env ``PSF_LLM_PROVIDER``):
+    - ``deepseek`` (default) — DeepSeek API, needs ``DEEPSEEK_API_KEY``
+    - ``anthropic`` — Anthropic Claude, needs ``ANTHROPIC_API_KEY``
+    """
     if os.environ.get("PSF_LLM") != "1":
         return None
-    try:
-        from psf_reasoner.infrastructure.anthropic_provider import AnthropicProvider
 
-        return AnthropicProvider()
+    provider_name = os.environ.get("PSF_LLM_PROVIDER", "deepseek")
+
+    try:
+        if provider_name == "anthropic":
+            from psf_reasoner.infrastructure.anthropic_provider import AnthropicProvider
+
+            return AnthropicProvider()
+        else:
+            from psf_reasoner.infrastructure.deepseek_provider import DeepSeekProvider
+
+            return DeepSeekProvider()
     except Exception:
         return None
