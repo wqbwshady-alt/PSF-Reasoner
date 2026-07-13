@@ -4,7 +4,7 @@ const examplePayload = {
   ligand: { identifier: "MK1" },
   mutation: { notation: "V82A", chain: "A" },
   phenotype: { name: "drug_resistance", direction: "increase" },
-  study_context: "HIV-1 protease V82A paired crystal-structure example"
+  study_context: "HIV-1 蛋白酶 V82A 配対晶体结构示例"
 };
 
 const elements = {
@@ -23,7 +23,7 @@ const elements = {
 };
 
 // ---------------------------------------------------------------------------
-// 3D Viewer
+// 3D 查看器
 // ---------------------------------------------------------------------------
 
 let viewer = null;
@@ -39,15 +39,15 @@ function initViewer() {
       antialias: true,
     });
   } catch (e) {
-    console.error("3Dmol init failed:", e);
-    showError("3D viewer failed to initialize. Check browser console.");
+    console.error("3Dmol 初始化失败:", e);
+    showError("3D 查看器初始化失败，请检查浏览器控制台。");
     return;
   }
 }
 
 async function loadStructureData(structurePath) {
   const response = await fetch(`/structure?path=${encodeURIComponent(structurePath)}`);
-  if (!response.ok) throw new Error(`Failed to load structure: ${structurePath}`);
+  if (!response.ok) throw new Error(`无法加载结构文件: ${structurePath}`);
   return response.text();
 }
 
@@ -66,10 +66,8 @@ async function showStructure(structurePathOnServer, mutationChain, mutationResNu
 
     viewer.addModel(pdbText, "pdb");
 
-    // Protein cartoon
     viewer.setStyle({ chain: mutationChain || undefined }, { cartoon: { color: "spectrum" } });
 
-    // Mutation site (red sphere on CA)
     if (mutationResNum) {
       viewer.setStyle(
         { chain: mutationChain || undefined, resi: mutationResNum },
@@ -77,7 +75,6 @@ async function showStructure(structurePathOnServer, mutationChain, mutationResNu
       );
     }
 
-    // Ligand (teal sticks)
     if (ligandId) {
       viewer.setStyle(
         { resn: ligandId.toUpperCase() },
@@ -85,7 +82,6 @@ async function showStructure(structurePathOnServer, mutationChain, mutationResNu
       );
     }
 
-    // Contact residues within 5A of ligand (yellow highlight)
     try {
       const model = viewer.getModel();
       if (model) {
@@ -114,15 +110,15 @@ async function showStructure(structurePathOnServer, mutationChain, mutationResNu
         }
       }
     } catch (e) {
-      console.warn("Contact residue highlighting skipped:", e);
+      console.warn("接触残基高亮跳过:", e);
     }
 
     viewer.zoomTo();
     viewer.render();
     viewer.resize();
   } catch (e) {
-    console.error("Structure rendering failed:", e);
-    showError("Failed to render 3D structure: " + e.message);
+    console.error("结构渲染失败:", e);
+    showError("3D 结构渲染失败: " + e.message);
   }
 }
 
@@ -142,7 +138,7 @@ elements.viewerTabs.forEach(tab => {
 });
 
 // ---------------------------------------------------------------------------
-// UI helpers
+// UI 工具函数
 // ---------------------------------------------------------------------------
 
 function setLoading(active) {
@@ -163,7 +159,7 @@ function showError(message) {
 async function requestJson(url, options) {
   const response = await fetch(url, options);
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.detail || "Analysis could not be completed.");
+  if (!response.ok) throw new Error(body.detail || "分析请求失败，请重试。");
   return body;
 }
 
@@ -196,13 +192,13 @@ function claimCard(item, showMeasurement = true) {
     ? `<span class="confidence-badge">${Math.round(item.confidence * 100)}%</span>`
     : "";
   const provenance = item.provenance
-    ? `<div class="provenance">Source: ${item.provenance.map(p => escapeHtml(p.source)).join(", ")}</div>`
+    ? `<div class="provenance">来源: ${item.provenance.map(p => escapeHtml(p.source)).join(", ")}</div>`
     : "";
   return `<article class="claim">
     <div class="claim-top"><strong>${escapeHtml(item.title)}</strong>${confidence}<span class="tag ${tagClass}">${escapeHtml(tag)}</span></div>
     <p>${escapeHtml(item.description)}</p>
     ${value ? `<div class="claim-meta">${escapeHtml(value)}</div>` : ""}
-    ${item.limitations && item.limitations.length ? `<div class="claim-limits">Limitations: ${escapeHtml(item.limitations.join("; "))}</div>` : ""}
+    ${item.limitations && item.limitations.length ? `<div class="claim-limits">局限性: ${escapeHtml(item.limitations.join("; "))}</div>` : ""}
     ${provenance}
   </article>`;
 }
@@ -211,10 +207,10 @@ function renderPreparation(items) {
   return items.map(item => {
     const issues = item.issues.length
       ? item.issues.map(issue => `<div class="issue">${escapeHtml(issue.message)}</div>`).join("")
-      : `<p>No preparation warnings.</p>`;
+      : `<p>未发现问题。</p>`;
     return `<article class="preparation-card">
-      <div class="claim-top"><strong>${escapeHtml(item.role)} structure</strong><span class="tag">${escapeHtml(item.format)}</span></div>
-      <p>${item.residue_count} residues · ${item.atom_count} atoms · ${item.water_residue_count} waters</p>
+      <div class="claim-top"><strong>${escapeHtml(item.role)} 结构</strong><span class="tag">${escapeHtml(item.format)}</span></div>
+      <p>${item.residue_count} 残基 · ${item.atom_count} 原子 · ${item.water_residue_count} 水分子</p>
       ${issues}
     </article>`;
   }).join("");
@@ -226,7 +222,6 @@ function renderReport(report) {
   const distance = computed.find(item => item.measurement?.name === "nearest_heavy_atom_distance_delta");
   const sasa = computed.find(item => item.measurement?.name === "residue_sasa_delta");
 
-  // Extract mutation info for viewer
   const mutationChain = report.request.mutation?.chain || "A";
   const mutationResNum = report.request.mutation?.residue_number || "82";
   const ligandId = report.request.ligand?.identifier || "";
@@ -236,33 +231,32 @@ function renderReport(report) {
   elements.report.innerHTML = `
     <div class="report-header">
       <div>
-        <p class="eyebrow">${escapeHtml(report.mode)} report</p>
-        <h2>${escapeHtml(report.request.mutation?.notation || "Phenotype analysis")}</h2>
+        <p class="eyebrow">${escapeHtml(report.mode)} 报告</p>
+        <h2>${escapeHtml(report.request.mutation?.notation || "表型分析")}</h2>
         <p>${escapeHtml(report.request.ligand.identifier)} · ${escapeHtml(report.report_id)}</p>
       </div>
-      <div class="confidence"><strong>${Math.round(report.confidence * 100)}%</strong><span>report confidence</span></div>
+      <div class="confidence"><strong>${Math.round(report.confidence * 100)}%</strong><span>综合置信度</span></div>
     </div>
     <div class="metrics">
-      ${metric("Computed evidence", String(computed.length), "coordinate-derived")}
-      ${metric("Distance delta", distance ? number(distance.measurement.value, "Å") : "—", distance ? "mutant minus reference" : "single structure")}
-      ${metric("Contact delta", contact ? number(contact.measurement.value) : "—", contact ? "1 gained · -1 lost" : "single structure")}
-      ${metric("SASA delta", sasa ? number(sasa.measurement.value, "Å²") : "—", sasa ? "mutant minus reference" : "not compared")}
+      ${metric("计算证据", String(computed.length), "坐标推导")}
+      ${metric("距离变化", distance ? number(distance.measurement.value, "Å") : "—", distance ? "突变体 − 参考" : "单结构")}
+      ${metric("接触变化", contact ? number(contact.measurement.value) : "—", contact ? "1 新增 · -1 丢失" : "单结构")}
+      ${metric("SASA 变化", sasa ? number(sasa.measurement.value, "Å²") : "—", sasa ? "突变体 − 参考" : "未比较")}
     </div>
     <div class="viewer-buttons">
-      ${refPath ? `<button class="viewer-btn" data-path="${escapeHtml(refPath)}" data-type="reference" data-chain="${escapeHtml(mutationChain)}" data-resnum="${escapeHtml(mutationResNum)}" data-ligand="${escapeHtml(ligandId)}">View Reference (WT)</button>` : ""}
-      ${mutantPath ? `<button class="viewer-btn" data-path="${escapeHtml(mutantPath)}" data-type="mutant" data-chain="${escapeHtml(mutationChain)}" data-resnum="${escapeHtml(mutationResNum)}" data-ligand="${escapeHtml(ligandId)}">View Mutant</button>` : ""}
+      ${refPath ? `<button class="viewer-btn" data-path="${escapeHtml(refPath)}" data-type="reference" data-chain="${escapeHtml(mutationChain)}" data-resnum="${escapeHtml(mutationResNum)}" data-ligand="${escapeHtml(ligandId)}">查看参考结构 (WT)</button>` : ""}
+      ${mutantPath ? `<button class="viewer-btn" data-path="${escapeHtml(mutantPath)}" data-type="mutant" data-chain="${escapeHtml(mutationChain)}" data-resnum="${escapeHtml(mutationResNum)}" data-ligand="${escapeHtml(ligandId)}">查看突变体</button>` : ""}
     </div>
-    <section class="report-section"><h3>Structure preparation</h3><div class="preparation-grid">${renderPreparation(report.structure_preparation)}</div></section>
-    <section class="report-section"><h3>Physical evidence</h3><div class="claim-list">${report.physical_evidence.map(item => claimCard(item)).join("")}</div></section>
-    <section class="report-section"><h3>Structural mechanisms</h3><div class="claim-list">${report.structural_mechanisms.map(item => claimCard(item, false)).join("")}</div></section>
-    <section class="report-section"><h3>Functional hypotheses</h3><div class="claim-list">${report.functional_hypotheses.map(item => claimCard(item, false)).join("") || "<p>No forward functional hypothesis was generated.</p>"}</div></section>
-    ${report.reverse_candidates && report.reverse_candidates.length ? `<section class="report-section"><h3>Reverse candidates</h3><div class="claim-list">${report.reverse_candidates.map(item => claimCard(item, false)).join("")}</div></section>` : ""}
-    ${report.consistency_checks && report.consistency_checks.length ? `<section class="report-section"><h3>Consistency checks</h3><div class="claim-list">${report.consistency_checks.map(item => claimCard(item, false)).join("")}</div></section>` : ""}
-    <section class="report-section"><h3>Validation plan</h3><div class="claim-list">${report.validation_plan.steps.map(step => `<article class="claim"><div class="claim-top"><strong>${escapeHtml(step.objective)}</strong><span class="tag">P${step.priority}</span></div><p>${escapeHtml(step.method)}</p><div class="claim-meta">${escapeHtml(step.expected_result)}</div></article>`).join("")}</div></section>
+    <section class="report-section"><h3>结构准备</h3><div class="preparation-grid">${renderPreparation(report.structure_preparation)}</div></section>
+    <section class="report-section"><h3>物理证据</h3><div class="claim-list">${report.physical_evidence.map(item => claimCard(item)).join("")}</div></section>
+    <section class="report-section"><h3>结构机制</h3><div class="claim-list">${report.structural_mechanisms.map(item => claimCard(item, false)).join("")}</div></section>
+    <section class="report-section"><h3>功能假设</h3><div class="claim-list">${report.functional_hypotheses.map(item => claimCard(item, false)).join("") || "<p>未生成正向功能假设。</p>"}</div></section>
+    ${report.reverse_candidates && report.reverse_candidates.length ? `<section class="report-section"><h3>反向候选</h3><div class="claim-list">${report.reverse_candidates.map(item => claimCard(item, false)).join("")}</div></section>` : ""}
+    ${report.consistency_checks && report.consistency_checks.length ? `<section class="report-section"><h3>一致性检查</h3><div class="claim-list">${report.consistency_checks.map(item => claimCard(item, false)).join("")}</div></section>` : ""}
+    <section class="report-section"><h3>验证计划</h3><div class="claim-list">${report.validation_plan.steps.map(step => `<article class="claim"><div class="claim-top"><strong>${escapeHtml(step.objective)}</strong><span class="tag">优先级 ${step.priority}</span></div><p>${escapeHtml(step.method)}</p><div class="claim-meta">${escapeHtml(step.expected_result)}</div></article>`).join("")}</div></section>
   `;
   elements.report.classList.remove("hidden");
 
-  // Wire viewer buttons
   elements.report.querySelectorAll(".viewer-btn").forEach(btn => {
     btn.addEventListener("click", async () => {
       const path = btn.dataset.path;
@@ -275,14 +269,14 @@ function renderReport(report) {
         setLoading(false);
         showStructure(path, chain, resnum, ligand);
       } catch (e) {
-        showError(`Failed to load 3D structure: ${e.message}`);
+        showError(`加载 3D 结构失败: ${e.message}`);
       }
     });
   });
 }
 
 // ---------------------------------------------------------------------------
-// Actions
+// 操作
 // ---------------------------------------------------------------------------
 
 async function runExample() {
@@ -321,9 +315,9 @@ elements.form.addEventListener("submit", async event => {
 fetch("/health")
   .then(response => {
     if (!response.ok) throw new Error();
-    elements.status.textContent = "Local service online";
+    elements.status.textContent = "服务已连接";
   })
   .catch(() => {
-    elements.status.textContent = "Local service unavailable";
+    elements.status.textContent = "服务未连接";
     elements.status.classList.add("offline");
   });

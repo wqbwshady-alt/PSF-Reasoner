@@ -103,4 +103,4 @@ def test_workbench_is_served_at_root() -> None:
     response = client.get("/")
 
     assert response.status_code == 200
-    assert "PSF-Reasoner Workbench" in response.text
+    assert "PSF-Reasoner" in response.text

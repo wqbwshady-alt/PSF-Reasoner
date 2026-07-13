@@ -3,69 +3,69 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>PSF-Reasoner Workbench</title>
+    <title>PSF-Reasoner 蛋白质分析工作台</title>
     <link rel="stylesheet" href="/client/styles.css" />
     <script src="https://3Dmol.org/build/3Dmol-min.js"></script>
   </head>
   <body>
     <header class="topbar">
-      <div class="brand">PSF-Reasoner <span>Local Workbench</span></div>
-      <div class="status" id="api-status">Checking service</div>
+      <div class="brand">PSF-Reasoner <span>本地工作台</span></div>
+      <div class="status" id="api-status">检测服务中</div>
     </header>
     <main class="layout">
-      <section class="control-panel" aria-label="Analysis input">
+      <section class="control-panel" aria-label="分析输入">
         <div class="panel-heading">
-          <p class="eyebrow">Protein-ligand analysis</p>
-          <h1>Physical · Structural · Functional</h1>
+          <p class="eyebrow">蛋白质-配体分析</p>
+          <h1>物理 · 结构 · 功能</h1>
         </div>
-        <button class="example-button" id="run-example" type="button">Run HIV-1 V82A example</button>
-        <div class="divider"><span>or analyze local structures</span></div>
+        <button class="example-button" id="run-example" type="button">运行 HIV-1 V82A 示例</button>
+        <div class="divider"><span>或上传本地结构文件</span></div>
         <form id="analysis-form">
           <label class="file-field">
-            <span>Reference structure</span>
+            <span>参考结构 (野生型)</span>
             <input id="reference-file" name="reference_file" type="file" accept=".pdb,.cif,.mmcif" required />
           </label>
           <label class="file-field">
-            <span>Mutant structure <em>optional</em></span>
+            <span>突变体结构 <em>可选</em></span>
             <input id="mutant-file" name="mutant_file" type="file" accept=".pdb,.cif,.mmcif" />
           </label>
           <div class="field-grid">
             <label>
-              <span>Ligand</span>
+              <span>配体</span>
               <input id="ligand" name="ligand" value="MK1" autocomplete="off" required />
             </label>
             <label>
-              <span>Mutation</span>
+              <span>突变</span>
               <input id="mutation" name="mutation" value="V82A" autocomplete="off" required />
             </label>
           </div>
           <div class="field-grid">
             <label>
-              <span>Protein chain</span>
+              <span>蛋白链</span>
               <input id="chain" name="chain" value="A" autocomplete="off" />
             </label>
             <label>
-              <span>Phenotype <em>optional</em></span>
+              <span>表型 <em>可选</em></span>
               <select id="phenotype" name="phenotype">
-                <option value="">Forward only</option>
-                <option value="drug_resistance">Drug resistance</option>
+                <option value="">仅正向推理</option>
+                <option value="drug_resistance">耐药性</option>
               </select>
             </label>
           </div>
-          <button class="primary-button" id="submit-analysis" type="submit">Analyze structures</button>
+          <button class="primary-button" id="submit-analysis" type="submit">开始分析</button>
         </form>
-        <p class="local-note">Files remain on this computer while the local service is running.</p>
+        <p class="local-note">文件仅在本地处理，不会上传到外部服务器。</p>
       </section>
 
       <section class="results-panel" aria-live="polite">
         <div class="empty-state" id="empty-state">
-          <p class="eyebrow">Ready for analysis</p>
-          <h2>Run an example or select local structures.</h2>
-          <p>Computed evidence, structural mechanisms, functional hypotheses, and validation steps will appear here — alongside an interactive 3D view of your structure.</p>
+          <p class="eyebrow">准备就绪</p>
+          <h2>运行示例或选择本地结构文件开始分析。</h2>
+          <p>计算证据、结构机制、功能假设、验证步骤以及交互式 3D 结构视图将在此展示。</p>
         </div>
         <div class="loading-state hidden" id="loading-state">
           <div class="spinner" aria-hidden="true"></div>
-          <p>Analyzing structures</p>
+          <p>正在分析结构</p>
         </div>
         <div class="error-state hidden" id="error-state"></div>
         <div class="report hidden" id="report"></div>
@@ -74,17 +74,17 @@
 
     <div class="viewer-panel hidden" id="viewer-panel">
       <div class="viewer-toolbar">
-        <span class="viewer-title">3D Structure View</span>
+        <span class="viewer-title">3D 结构视图</span>
         <div class="viewer-tabs">
-          <button class="viewer-tab active" data-mode="reference">Reference (WT)</button>
-          <button class="viewer-tab" data-mode="mutant">Mutant</button>
+          <button class="viewer-tab active" data-mode="reference">参考结构 (WT)</button>
+          <button class="viewer-tab" data-mode="mutant">突变体</button>
         </div>
-        <button class="viewer-close" id="viewer-close" title="Close viewer">&times;</button>
+        <button class="viewer-close" id="viewer-close" title="关闭">&times;</button>
       </div>
       <div class="viewer-legend" id="viewer-legend">
-        <span class="legend-item"><span class="legend-swatch" style="background:#4ecdc4"></span> Ligand</span>
-        <span class="legend-item"><span class="legend-swatch" style="background:#ff6b6b"></span> Mutation site</span>
-        <span class="legend-item"><span class="legend-swatch" style="background:#ffe66d"></span> Contact residues</span>
+        <span class="legend-item"><span class="legend-swatch" style="background:#4ecdc4"></span> 配体</span>
+        <span class="legend-item"><span class="legend-swatch" style="background:#ff6b6b"></span> 突变位点</span>
+        <span class="legend-item"><span class="legend-swatch" style="background:#ffe66d"></span> 接触残基</span>
       </div>
       <div class="viewer-container" id="viewer-3d"></div>
     </div>
