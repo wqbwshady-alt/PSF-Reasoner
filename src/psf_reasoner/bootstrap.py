@@ -11,12 +11,14 @@ import os
 
 from psf_reasoner.application.runner import AnalysisRunner
 from psf_reasoner.application.service import AnalysisService
+from psf_reasoner.infrastructure.cloud_compute import HttpCloudAdapter
 from psf_reasoner.infrastructure.execution import InlineExecutionBackend
 from psf_reasoner.infrastructure.repository import InMemoryReportRepository
 from psf_reasoner.infrastructure.sqlite_repository import SqliteReportRepository
 from psf_reasoner.physical.base import CompositeEvidenceProvider
 from psf_reasoner.physical.baseline import MutationPropertyEvidenceProvider
 from psf_reasoner.physical.calibration import HIVProteaseCalibrationProvider
+from psf_reasoner.physical.cloud_provider import CloudEvidenceProvider
 from psf_reasoner.physical.comparison import ComparativeEvidenceProvider
 from psf_reasoner.physical.coordinates import CoordinateEvidenceProvider
 from psf_reasoner.physical.energy import LocalEnergyEvidenceProvider
@@ -66,6 +68,7 @@ def create_default_service(
             PocketNetworkEvidenceProvider(),
             LocalEnergyEvidenceProvider(),
             HIVProteaseCalibrationProvider(),
+            CloudEvidenceProvider(adapter=_cloud_adapter()),
         ),
         forward_reasoner=forward_reasoner,
         reverse_reasoner=reverse_reasoner,
@@ -100,6 +103,14 @@ def create_default_runner(
 # ---------------------------------------------------------------------------
 # Internal
 # ---------------------------------------------------------------------------
+
+
+def _cloud_adapter() -> HttpCloudAdapter | None:
+    """Return an HTTP cloud adapter when PSF_CLOUD_URL is set."""
+    cloud_url = os.environ.get("PSF_CLOUD_URL", "")
+    if not cloud_url:
+        return None
+    return HttpCloudAdapter(base_url=cloud_url)
 
 
 def _auto_llm_provider() -> LLMProvider | None:
