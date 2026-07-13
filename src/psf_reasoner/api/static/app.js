@@ -41,14 +41,14 @@ function initViewer() {
 }
 
 async function loadStructureData(structurePath) {
-  const response = await fetch(`/structure/${encodeURIComponent(structurePath)}`);
+  const response = await fetch(`/structure?path=${encodeURIComponent(structurePath)}`);
   if (!response.ok) throw new Error(`Failed to load structure: ${structurePath}`);
   return response.text();
 }
 
 async function showStructure(structurePathOnServer, mutationChain, mutationResNum, ligandId) {
-  initViewer();
   elements.viewerPanel.classList.remove("hidden");
+  initViewer();
   viewer.removeAllSurfaces();
   viewer.removeAllModels();
 

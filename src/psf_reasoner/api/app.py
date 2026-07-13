@@ -99,7 +99,7 @@ def create_app(runner: AnalysisRunnerProtocol | None = None) -> FastAPI:
         except ReportLookupError as error:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="report not found") from error
 
-    @api.get("/structure/{path:path}")
+    @api.get("/structure")
     def get_structure(path: str) -> PlainTextResponse:
         """Serve a PDB/mmCIF file as PDB text for the 3D viewer."""
         import gemmi
