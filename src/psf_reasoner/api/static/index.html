@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>PSF-Reasoner Workbench</title>
     <link rel="stylesheet" href="/client/styles.css" />
+    <script src="https://3Dmol.org/build/3Dmol-min.js"></script>
   </head>
   <body>
     <header class="topbar">
@@ -60,16 +61,34 @@
         <div class="empty-state" id="empty-state">
           <p class="eyebrow">Ready for analysis</p>
           <h2>Run an example or select local structures.</h2>
-          <p>Computed evidence, structural mechanisms, functional hypotheses, and validation steps will appear here.</p>
+          <p>Computed evidence, structural mechanisms, functional hypotheses, and validation steps will appear here — alongside an interactive 3D view of your structure.</p>
         </div>
         <div class="loading-state hidden" id="loading-state">
           <div class="spinner" aria-hidden="true"></div>
-          <p>Analyzing local structures</p>
+          <p>Analyzing structures</p>
         </div>
         <div class="error-state hidden" id="error-state"></div>
         <div class="report hidden" id="report"></div>
       </section>
     </main>
+
+    <div class="viewer-panel hidden" id="viewer-panel">
+      <div class="viewer-toolbar">
+        <span class="viewer-title">3D Structure View</span>
+        <div class="viewer-tabs">
+          <button class="viewer-tab active" data-mode="reference">Reference (WT)</button>
+          <button class="viewer-tab" data-mode="mutant">Mutant</button>
+        </div>
+        <button class="viewer-close" id="viewer-close" title="Close viewer">&times;</button>
+      </div>
+      <div class="viewer-legend" id="viewer-legend">
+        <span class="legend-item"><span class="legend-swatch" style="background:#4ecdc4"></span> Ligand</span>
+        <span class="legend-item"><span class="legend-swatch" style="background:#ff6b6b"></span> Mutation site</span>
+        <span class="legend-item"><span class="legend-swatch" style="background:#ffe66d"></span> Contact residues</span>
+      </div>
+      <div class="viewer-container" id="viewer-3d"></div>
+    </div>
+
     <template id="metric-template">
       <article class="metric">
         <span class="metric-label"></span>

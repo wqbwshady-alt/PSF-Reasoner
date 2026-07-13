@@ -5,7 +5,7 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from psf_reasoner.application.ports import ReportLookupError, StructureInputError
@@ -98,6 +98,23 @@ def create_app(runner: AnalysisRunnerProtocol | None = None) -> FastAPI:
             return active_runner.get_report(report_id)
         except ReportLookupError as error:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="report not found") from error
+
+    @api.get("/structure/{path:path}")
+    def get_structure(path: str) -> PlainTextResponse:
+        """Serve a PDB/mmCIF file as PDB text for the 3D viewer."""
+        import gemmi
+
+        file_path = Path(path)
+        if not file_path.is_absolute():
+            file_path = Path.cwd() / path
+        if not file_path.is_file():
+            raise HTTPException(status_code=404, detail="structure file not found")
+        try:
+            structure = gemmi.read_structure(str(file_path))
+            pdb_text = structure.make_pdb()
+        except Exception as e:
+            raise HTTPException(status_code=422, detail=f"failed to read structure: {e}") from e
+        return PlainTextResponse(pdb_text, media_type="text/plain")
 
     @api.post("/admin/maintain-uploads")
     def maintain_uploads_endpoint() -> dict:
