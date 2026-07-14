@@ -103,6 +103,32 @@ def _request(
     )
 
 
+@app.command()
+def batch(
+    manifest: Annotated[
+        Path,
+        typer.Argument(
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+            readable=True,
+            help="Path to a JSON batch manifest file",
+        ),
+    ],
+) -> None:
+    """Run a batch of analyses from a JSON manifest file."""
+    from psf_reasoner.application.batch_runner import BatchRunner
+    from psf_reasoner.schemas.batch import BatchManifest
+
+    data = json.loads(manifest.read_text())
+    parsed = BatchManifest.model_validate(data)
+    runner = BatchRunner(_runner)
+    result = runner.run(parsed)
+
+    typer.echo(json.dumps(result.model_dump(mode="json"), indent=2, sort_keys=True))
+    typer.echo(f"\n{result.succeeded}/{result.total} succeeded, {result.failed} failed")
+
+
 def _write_report(request: AnalysisRequest) -> None:
     try:
         report = _runner.run(request)
