@@ -7,6 +7,8 @@ data does NOT automatically prove any particular structural mechanism.
 
 from __future__ import annotations
 
+from datetime import date
+
 from pydantic import Field
 
 from psf_reasoner.schemas.common import ScientificModel
@@ -70,3 +72,33 @@ class BenchmarkCase(ScientificModel):
     # --- Exclusion flags ---
     excluded_from_calibration: bool = False
     exclusion_reason: str | None = None
+
+    # --- Split assignment (set by benchmark freeze) ---
+    split: str = "development"  # "development" | "held_out"
+
+
+class BenchmarkDataset(ScientificModel):
+    """A frozen, versioned benchmark dataset."""
+
+    benchmark_id: str
+    version: str
+    description: str = ""
+    frozen_date: date | None = None
+    split_strategy: str = "mutation-level"
+    split_note: str = ""
+    cases: tuple[BenchmarkCase, ...] = ()
+
+    @property
+    def development_set(self) -> tuple[BenchmarkCase, ...]:
+        return tuple(c for c in self.cases if c.split == "development")
+
+    @property
+    def held_out_set(self) -> tuple[BenchmarkCase, ...]:
+        return tuple(c for c in self.cases if c.split == "held_out")
+
+    @property
+    def calibration_ready(self) -> tuple[BenchmarkCase, ...]:
+        return tuple(
+            c for c in self.cases
+            if not c.excluded_from_calibration and c.mechanism_label is not None
+        )

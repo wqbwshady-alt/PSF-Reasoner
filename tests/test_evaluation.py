@@ -1,9 +1,14 @@
 import json
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
-from psf_reasoner.evaluation.protocols import BenchmarkCase
+from psf_reasoner.evaluation.benchmark_runner import (
+    case_to_request,
+    load_benchmark,
+)
+from psf_reasoner.evaluation.protocols import BenchmarkCase, BenchmarkDataset
 
 
 def _minimal_case(**overrides) -> dict:
@@ -134,3 +139,84 @@ class TestBenchmarkCase:
     def test_protein_uniprot_is_optional(self) -> None:
         case = BenchmarkCase(**_minimal_case(protein_uniprot=None))
         assert case.protein_uniprot is None
+
+    def test_default_split_is_development(self) -> None:
+        case = BenchmarkCase(**_minimal_case())
+        assert case.split == "development"
+
+
+class TestBenchmarkDataset:
+    def test_empty_dataset(self) -> None:
+        ds = BenchmarkDataset(benchmark_id="test", version="0.1.0")
+        assert len(ds.cases) == 0
+        assert len(ds.development_set) == 0
+        assert len(ds.held_out_set) == 0
+        assert len(ds.calibration_ready) == 0
+
+    def test_split_assignment(self) -> None:
+        dev = BenchmarkCase(**_minimal_case(case_id="dev", split="development"))
+        ho = BenchmarkCase(**_minimal_case(case_id="ho", split="held_out"))
+        ds = BenchmarkDataset(
+            benchmark_id="test", version="0.1.0", cases=(dev, ho)
+        )
+        assert len(ds.development_set) == 1
+        assert len(ds.held_out_set) == 1
+        assert ds.development_set[0].case_id == "dev"
+        assert ds.held_out_set[0].case_id == "ho"
+
+    def test_calibration_ready_filters_excluded(self) -> None:
+        ok = BenchmarkCase(**_minimal_case(case_id="ok"))
+        excluded = BenchmarkCase(**_minimal_case(
+            case_id="ex", excluded_from_calibration=True,
+            exclusion_reason="no mechanism label",
+            mechanism_label=None, mechanism_evidence="none",
+            mechanism_confidence=0.0,
+        ))
+        ds = BenchmarkDataset(
+            benchmark_id="test", version="0.1.0", cases=(ok, excluded)
+        )
+        assert len(ds.calibration_ready) == 1
+        assert ds.calibration_ready[0].case_id == "ok"
+
+    def test_calibration_ready_filters_no_mechanism_label(self) -> None:
+        no_label = BenchmarkCase(**_minimal_case(
+            case_id="nl", mechanism_label=None, mechanism_evidence="none",
+            mechanism_confidence=0.0,
+        ))
+        ds = BenchmarkDataset(
+            benchmark_id="test", version="0.1.0", cases=(no_label,)
+        )
+        assert len(ds.calibration_ready) == 0
+
+    def test_load_benchmark_from_file(self, tmp_path: Path) -> None:
+        path = tmp_path / "benchmark.json"
+        case = _minimal_case()
+        data = {
+            "benchmark_id": "test-benchmark",
+            "version": "1.0.0",
+            "description": "test",
+            "cases": [case],
+        }
+        path.write_text(json.dumps(data))
+
+        ds = load_benchmark(path)
+        assert ds.benchmark_id == "test-benchmark"
+        assert len(ds.cases) == 1
+        assert ds.cases[0].case_id == "hiv1-v82a-mk1"
+
+    def test_case_to_request_converts_correctly(self) -> None:
+        case = BenchmarkCase(**_minimal_case())
+        request = case_to_request(case)
+        assert request.ligand.identifier == "MK1"
+        assert request.mutation.notation == "V82A"
+        assert request.phenotype.name == "drug_resistance"
+
+    def test_load_frozen_benchmark(self) -> None:
+        """The frozen v1.0.0 benchmark should load successfully."""
+        path = Path("benchmarks/hiv1_protease/v1.0.0.json")
+        if not path.exists():
+            pytest.skip("v1.0.0 benchmark not found")
+        ds = load_benchmark(path)
+        assert ds.version == "1.0.0"
+        assert len(ds.cases) == 2
+        assert len(ds.calibration_ready) == 2
