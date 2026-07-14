@@ -44,9 +44,9 @@ class BenchmarkCase(ScientificModel):
     # --- Functional outcome (experimental) ---
     assay_type: str  # e.g. "IC50", "Ki", "Kd", "fold_change"
     assay_conditions: str  # pH, temperature, buffer
-    wt_value: float
+    wt_value: float | None = None
     wt_unit: str
-    mutant_value: float
+    mutant_value: float | None = None
     mutant_unit: str  # must match wt_unit
     fold_change: float | None = None  # computed or reported
     direction: str  # "increase" | "decrease" | "unchanged"
