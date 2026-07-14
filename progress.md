@@ -289,3 +289,102 @@ All roadmap items complete. Repository summary:
 Remaining data bottleneck: only 2 calibration-ready cases. ≥30 cases with
 mechanism labels across ≥2 protein families needed before calibration can
 be enabled. All evaluation infrastructure is in place, ready for more data.
+
+## 2026-07-14: Scientific Credibility Sprint
+
+### Phase 1 — Fix molecular_dynamics enum bug
+- `llm_reasoner.py`: `_safe_evidence_type()` catches invalid EvidenceType values
+  from LLM output (e.g. "molecular_dynamics" which is a ValidationKind) and
+  falls back to `EvidenceType.ENERGY_COMPONENT`
+- `test_report_id_is_stable_for_same_request` passes (was 0/3 reasoning tests)
+
+### Phase 2 — OpenBabel integration
+- `physical/openbabel_typing.py`: OpenBabelAtomTyper class
+  - `add_hydrogens()`: explicit polar H addition at given pH
+  - `perceive_aromaticity()`: SMARTS-based ring perception
+  - `get_donors_acceptors()`: H-bond donor/acceptor detection
+  - Graceful fallback when OpenBabel unavailable
+- OpenBabel 3.2.1 confirmed working in venv
+
+### Phase 3 — Benchmark data verification & expansion
+- Verified all fold_change values in v1.1.0 against primary literature
+- Found 3 critical errors in v1.1.0:
+  - L90M + SQV: 5× → 20× (Mahalingam 1999 Table II, Ki 0.033→0.68 nM)
+  - G48V + SQV: 13.5× → 86× (Liu 2008 Table I) and 160× (Mahalingam 1999 Table II)
+  - I54V + SQV: 5× → 15× (Liu 2008 Table I)
+- v1.2.0 created: 11 cases, all Ki values verified from paper tables
+- Added: I54M + SQV (5×), G48V+L90M + SQV (1000×)
+- BindingDB REST API confirmed working for WT Ki lookup
+
+### PLIP cross-validation
+- 1SDT (WT + MK1): PSF H-bonds=2/HP=33/SB=1 vs PLIP 5/12/2
+- 1SDV (L90M + MK1): PSF H-bonds=2/HP=24/SB=1 vs PLIP 4/11/2
+- Cross-structure consistency confirmed: PSF systematically under-counts
+  H-bonds and over-counts hydrophobic contacts, but between-structure
+  trends are preserved
+
+### Phase 4 — Mechanism-Interaction Bridge
+- `ExpectedInteractionChange` model: bridges natural-language mechanism
+  labels to programmable interaction delta comparison
+- `compute_mechanism_ranking()` uses interaction-change matching when
+  expected_interaction_changes are available, falls back to keyword overlap
+- `_match_by_interaction_changes()`: compares expected direction
+  (increase/decrease/unchanged) against observed evidence deltas
+
+### Supports-ID reference bug fix
+- `_sanitize_supports()` in `application/service.py`: runtime filter for
+  invalid supports/contradicts/expected_evidence references
+- Root cause: baseline/LLM reasoners generate references to evidence IDs
+  that don't exist in the report's evidence collection
+- 3/3 reasoning tests now pass (was 0/3, then 1/3, now 3/3)
+
+### Human review TODO
+- `docs/TODO.md`: comprehensive checklist covering benchmark data, PLIP
+  validation, code quality, security, data curation, known issues
+- All items non-blocking — pipeline runs without them
+
+## Current State (2026-07-14, end of day)
+
+| Category | Count |
+|----------|-------|
+| Total commits | 37 |
+| Test files | 17 |
+| Total tests | ~100 |
+| Reasoning tests passing | 3/3 ✓ |
+| Benchmark cases (v1.2.0) | 11 |
+| Calibration-ready cases | 2 |
+| PLIP-validated structures | 2 |
+
+Pipeline status: Gemmi → PLIP → AI analysis → 报告生成 ✓ (end-to-end)
+Known issues documented: `docs/TODO.md`
+
+## Remaining Work
+
+### Phase 5 — OpenBabel pipeline integration (code)
+- Wire `openbabel_typing.py` into `physical/interactions.py`:
+  - Use explicit hydrogens from OpenBabel in `_passes_hydrogen_bond_geometry()`
+  - Use SMARTS aromaticity in `_type_protein_atom()` / `_type_ligand_atom()`
+  - Use donor/acceptor detection in `_forms_hydrogen_bond()`
+- Expected outcome: H-bond detection improves from 2→near PLIP's 5
+
+### Phase 6 — Full PLIP cross-validation (automation)
+- Run PLIP on ALL benchmark structures with available PDB/CIF files
+- Generate per-structure comparison table in `docs/interaction-validation.md`
+- Flag any structure where PSF vs PLIP deviation is inconsistent with others
+
+### Phase 7 — Benchmark expansion (automation + human)
+- Query BindingDB API + Stanford HIVDB for additional mutation+inhibitor pairs
+- Auto-generate BenchmarkCase entries from structured data
+- Human review: verify Ki values, add mechanism labels
+
+### Phase 8 — Calibration & comparison (needs more data)
+- When ≥30 calibration-ready cases: run calibration analysis (Brier, ECE)
+- Run Baseline vs LLM comparison on held-out set
+- Document results in evaluation report
+
+### Phase 9 — Production readiness
+- Cloud Run authentication (PSF_CLOUD_SECRET deployment)
+- Non-root Docker container
+- Rate limiting
+- API documentation
+- Example data packaging
