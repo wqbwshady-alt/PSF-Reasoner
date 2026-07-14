@@ -65,25 +65,31 @@ determined HIV-1 protease—inhibitor complex structures.
 **PLIP version**: 3.0.0
 **Structure**: 1SDT (HIV-1 protease WT + indinavir/MK1, 1.30 Å)
 
-### 1SDT (WT + MK1)
+### 1SDT (WT + MK1) — After Parameter Corrections
 
-| Interaction Type | PSF Count | PLIP Count | Match | Notes |
-|-----------------|-----------|------------|-------|-------|
-| hydrogen_bond | 2 | 5 (2 pdon + 3 ldon) | No | PSF more conservative: stricter angle criteria + estimated H positions |
-| hydrophobic_contact | 41 | 12 | No | PSF counts all C/S atoms; PLIP only sp3 C with C/H neighbors |
-| salt_bridge | 0 | 2 (1 lneg + 1 pneg) | No | PSF uses 4.0A cutoff vs PLIP 5.5A; PSF charge typing may be incomplete |
-| pi_interaction | 0 | 0 | Yes | Both agree — indinavir (MK1) has no aromatic rings that trigger detection |
-| water_bridge | 7 | 5 | No | PSF over-counts as expected from distance-only method |
+Three corrections applied based on initial comparison:
+1. Salt bridge cutoff: 4.0 Å → 5.5 Å (aligned with PLIP)
+2. H-bond angle threshold: 110° → 100° (aligned with PLIP)
+3. Hydrophobic: exclude polar carbons (bonded to O/N) in both protein and ligand
+4. Ligand charge: protonatable N atoms treated as potential positive charges
+
+| Interaction Type | PSF Count (before→after) | PLIP Count | Status |
+|-----------------|-------------------------|------------|--------|
+| hydrogen_bond | 2→2 | 5 (2 pdon + 3 ldon) | Still low. Remaining gap likely from ligand donor direction — estimated H positions may not pass geometry check. |
+| hydrophobic_contact | 41→33 | 12 | Improved (3.4x→2.75x). Remaining gap from PLIP's stricter sp3-C-only definition vs PSF's element-based approach. |
+| salt_bridge | 0→1 | 2 (1 lneg + 1 pneg) | Much improved. PSF now detects 1 of 2. Remaining gap: second salt bridge may involve a different charged pair. |
+| pi_interaction | 0 | 0 | Full agreement maintained. |
+| water_bridge | 7 | 5 | Similar before and after (unchanged by parameter corrections). |
 
 ### Agreement Summary
 
-| Interaction Type | Agreement | Analysis |
-|-----------------|-----------|----------|
-| hydrogen_bond | Partial | PSF is ~40% of PLIP. Conservative — may miss real H-bonds. Consider relaxing angle threshold or improving H-position estimation. |
-| hydrophobic_contact | Low | PSF over-counts ~3.4x. PLIP definition is stricter (sp3 C only). Consider filtering by carbon hybridization. |
-| salt_bridge | Missing | PSF completely misses. Root cause: 4.0A cutoff too strict. PLIP uses 5.5A. |
-| pi_interaction | Full | Both detect 0 for this ligand. |
-| water_bridge | Good | PSF 7 vs PLIP 5. Difference expected from distance-only method. |
+| Interaction Type | Agreement | Root Cause of Remaining Differences |
+|-----------------|-----------|-------------------------------------|
+| hydrogen_bond | Partial (2/5) | PSF H-position estimation less accurate than PLIP's OpenBabel explicit protonation. Donor/acceptor typing otherwise correct. |
+| hydrophobic_contact | Partial (33/12) | PSF element-based definition broader than PLIP's sp3-only rule. Remaining gap acceptable given documented conservatism. |
+| salt_bridge | Partial (1/2) | PSF charge inference rule (protonatable N) catches 1 of 2. Second may involve carboxylate group interaction. |
+| pi_interaction | Full (0/0) | Both agree. |
+| water_bridge | Good (7/5) | PSF distance-only method over-counts slightly. PLIP geometry check is stricter. |
 
 ## Parameter Adjustments
 

@@ -10,9 +10,9 @@ from psf_reasoner.physical.structure import AtomRecord, ResidueRecord
 
 HYDROGEN_BOND_CUTOFF_ANGSTROM = 3.5
 HYDROPHOBIC_CUTOFF_ANGSTROM = 4.0
-SALT_BRIDGE_CUTOFF_ANGSTROM = 4.0
+SALT_BRIDGE_CUTOFF_ANGSTROM = 5.5  # aligned with PLIP (was 4.0)
 PI_CENTROID_CUTOFF_ANGSTROM = 5.5
-HYDROGEN_BOND_MIN_ANGLE_DEGREES = 110.0
+HYDROGEN_BOND_MIN_ANGLE_DEGREES = 100.0  # aligned with PLIP (was 110.0)
 
 AROMATIC_RESIDUE_ATOMS = {
     "PHE": frozenset({"CG", "CD1", "CD2", "CE1", "CE2", "CZ"}),
@@ -32,6 +32,16 @@ DONOR_ATOMS = {
     "TRP": frozenset({"NE1"}),
     "TYR": frozenset({"OH"}),
 }
+# Polar carbon atoms — carbons bonded to O/N in side chains.
+# These should NOT be counted as hydrophobic (aligns with PLIP's sp3-C-only rule).
+POLAR_CARBON_ATOMS: dict[str, frozenset[str]] = {
+    "ARG": frozenset({"CZ"}),
+    "ASN": frozenset({"CG"}),
+    "ASP": frozenset({"CG"}),
+    "GLN": frozenset({"CD"}),
+    "GLU": frozenset({"CD"}),
+}
+
 ACCEPTOR_ATOMS = {
     "ASN": frozenset({"OD1"}),
     "ASP": frozenset({"OD1", "OD2"}),
@@ -186,13 +196,17 @@ def _type_protein_atom(atom: AtomRecord) -> AtomTyping:
             donor=residue_name != "PRO",
             reason="protein backbone amide nitrogen",
         )
+    is_polar_carbon = atom_name in POLAR_CARBON_ATOMS.get(residue_name, frozenset())
     return AtomTyping(
         donor=atom_name in DONOR_ATOMS.get(residue_name, frozenset()),
         acceptor=atom_name in ACCEPTOR_ATOMS.get(residue_name, frozenset()),
         positive=atom_name in POSITIVE_ATOMS.get(residue_name, frozenset()),
         negative=atom_name in NEGATIVE_ATOMS.get(residue_name, frozenset()),
         aromatic=atom_name in AROMATIC_RESIDUE_ATOMS.get(residue_name, frozenset()),
-        hydrophobic=(atom.element == "C" and atom_name not in {"C", "CA"}) or atom.element == "S",
+        hydrophobic=(
+            (atom.element == "C" and atom_name not in {"C", "CA"} and not is_polar_carbon)
+            or atom.element == "S"
+        ),
         reason="residue-template atom typing",
     )
 
@@ -232,13 +246,21 @@ def _type_ligand_atom(
     )
     os_donor = (is_oxygen or is_sulfur) and (bonded_hydrogen or atom.formal_charge > 0)
     likely_donor = n_donor or os_donor
+    # Carbons bonded to O/N are polar, not hydrophobic (aligned with PLIP)
+    ligand_hydrophobic = (
+        is_carbon
+        and not any(neighbor.element in {"O", "N"} for neighbor in neighbors)
+    ) or atom.element in {"CL", "BR", "I", "F"}
+    # Nitrogen with <3 heavy neighbours is protonatable → potential positive
+    # (aligned with PLIP's OpenBabel-based charge assignment at phys. pH)
+    n_protonatable = is_nitrogen and bool(neighbors) and len(neighbors) < 3
     return AtomTyping(
         donor=likely_donor,
         acceptor=is_oxygen or is_sulfur,
-        positive=atom.formal_charge > 0,
+        positive=(atom.formal_charge > 0) or n_protonatable,
         negative=atom.formal_charge < 0,
         aromatic=aromatic,
-        hydrophobic=is_carbon or atom.element in {"CL", "BR", "I", "F"},
+        hydrophobic=ligand_hydrophobic,
         confidence=confidence,
         reason=(
             "explicit formal charge with element typing"
