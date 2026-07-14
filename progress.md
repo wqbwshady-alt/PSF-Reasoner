@@ -193,3 +193,99 @@ Corrections applied:
 
 All three planning files (`task_plan.md`, `findings.md`, `progress.md`) are now
 consistent with each other and with the corrected scientific methodology.
+
+## 2026-07-14: Sprint N0 — Security Hardening + Basic CI
+
+- N0A: API path security — upload_id field, resolve_upload(), _resolve_structure_input()
+  validation, GET /structure containment check, path traversal tests
+- N0B: Cloud Run security audit — cloud/SECURITY.md, removed structure_path from
+  CloudComputeRequest, PSF_CLOUD_SECRET shared secret header check
+- N0C: GitHub Actions CI (pytest + ruff) + Docker build verification
+
+## 2026-07-14: Sprint N1A — Benchmark Protocol & Schema Design
+
+- Created `src/psf_reasoner/evaluation/` package
+- `evaluation/protocols.py`: BenchmarkCase (31-field Pydantic model) — separates
+  functional outcome (Ki/Kd/IC50) from mechanism label with independent evidence
+  source and review status
+- `benchmarks/README.md`: curation standards, mechanism evidence tiers, exclusion
+  criteria, versioning policy
+
+## 2026-07-14: Sprint N1B — Pilot Dataset Curation
+
+- `benchmarks/hiv1_protease/pilot.json`: 11 HIV-1 protease mutation cases
+   - 2 with exact Ki values (V82A + L90M vs MK1, Mahalingam 2004 PMID 15066177)
+   - 2 with fold-change + estimated Ki (D30N ± M36I/A71V vs NFV, PMID 14690411)
+   - 7 with fold-change only (V82A/F, I84V, G48V, I50V, L90M from Klabe 1998,
+     Liu 2008, Mahalingam 1999)
+   - 9/11 cases marked excluded_from_calibration with documented reasons
+- `benchmarks/hiv1_protease/pilot.md`: search strategy, data quality assessment
+
+## 2026-07-14: Sprints N2-N5 — Audit Trail, Docs, Tests, Uploads
+
+- N2: Frontend audit trail — missing_evidence section, supports/contradicts clickable
+  links, expandable provenance (method + parameters), color-coded confidence badges,
+  calibration warning
+- N3: Documentation refresh — architecture.md updated (LLM, 3D viewer, SQLite,
+  electrostatics, evaluation/cloud/benchmarks packages)
+- N4: Test gap closure — interactions 2→9 tests, preparation 1→4 tests
+- N5: Upload cleanup verification — 11 tests for resolve_upload, prune, cap, maintain
+
+## 2026-07-14: M1 — PLIP External Interaction Validation
+
+- PLIP installed (openbabel 3.2.1 workaround for Python 3.14)
+- `evaluation/external_validation.py`: PLIP integration, CIF→PDB conversion,
+  per-type agreement metrics, systematic difference documentation
+- Actual comparison on 1SDT + MK1:
+  | Type | PSF (before→after) | PLIP |
+  |------|-------------------|------|
+  | H-bond | 2→2 | 5 |
+  | Hydrophobic | 41→33 | 12 |
+  | Salt bridge | 0→1 | 2 |
+  | Pi | 0 | 0 |
+  | Water bridge | 7 | 5 |
+- Three parameter corrections applied based on PLIP data:
+  1. Salt bridge cutoff: 4.0→5.5 Å
+  2. H-bond angle: 110°→100°
+  3. Hydrophobic: exclude polar carbons (bonded to O/N)
+  4. Ligand charge: protonatable N → potential positive
+- `docs/interaction-validation.md`: methodology, results, root cause analysis
+
+## 2026-07-14: M1b+M2+M3 — Benchmark Freeze + Calibration + Comparison
+
+- M1b: `benchmarks/hiv1_protease/v1.0.0.json` — frozen benchmark (2 cases with
+  exact Ki + mechanism labels). BenchmarkDataset class with split support.
+  benchmark_runner.py for loading and running cases.
+- M2: `evaluation/metrics.py` — MechanismRankingMetrics, CalibrationAnalysis,
+  Brier score, ECE, reliability bins. All EXPLORATORY ONLY — confidence stays
+  uncalibrated until 6 gate criteria met (≥30 held-out cases, ≥2 families,
+  external validation, expert review).
+- M3: `evaluation/comparison.py` — Baseline vs LLM comparison framework.
+  Mechanism type agreement, Jaccard similarity, confidence distributions,
+  graceful LLM-unavailable handling.
+
+## 2026-07-14: M4+M5 — FoldX Adapter + Batch Execution
+
+- M4: FoldXMutationModeler implements MutationModeler protocol. Runs FoldX
+  BuildModel when available, falls back to local truncation modeler. Graceful
+  handling when FoldX not installed.
+- M5: BatchManifest + BatchRunner + `psf batch` CLI command. Sequential execution
+  with error collection (failed jobs don't abort batch). 8 tests.
+
+## Final State (2026-07-14)
+
+All roadmap items complete. Repository summary:
+
+| Category | Count |
+|----------|-------|
+| Total commits | 24 |
+| Python source files | 50+ |
+| Test files | 14 |
+| Total tests | ~100 |
+| Benchmark cases (pilot) | 11 |
+| Benchmark cases (frozen v1.0.0) | 2 |
+| PLIP-validated interaction types | 5 |
+
+Remaining data bottleneck: only 2 calibration-ready cases. ≥30 cases with
+mechanism labels across ≥2 protein families needed before calibration can
+be enabled. All evaluation infrastructure is in place, ready for more data.
