@@ -160,6 +160,29 @@ input[type="file"] { padding: 7px; font-size: 12px; }
 .claim-limits { color: var(--gold); font-size: 11px; margin-top: 6px; font-style: italic; }
 .provenance { color: var(--muted); font-size: 10px; margin-top: 5px; }
 
+/* ---- 审计追踪 ---- */
+.claim-refs { font-size: 11px; margin-top: 5px; line-height: 1.5; }
+.claim-refs.supports { color: #075f5e; }
+.claim-refs.contradicts { color: #8b2942; }
+.ref-link { color: inherit; text-decoration: underline; cursor: pointer; }
+.ref-link:hover { opacity: 0.7; }
+.provenance-details { margin-top: 6px; font-size: 11px; color: var(--muted); }
+.provenance-details summary { cursor: pointer; color: var(--teal); }
+.provenance-details summary:hover { text-decoration: underline; }
+.prov-item { margin-top: 4px; padding: 4px 8px; border-left: 2px solid var(--line); }
+.prov-method, .prov-params { font-size: 10px; color: var(--muted); margin-top: 1px; word-break: break-all; }
+.calibration-warning {
+  margin-top: 20px;
+  padding: 10px 14px;
+  border: 1px solid var(--gold);
+  border-radius: 5px;
+  background: var(--gold-soft);
+  color: #704807;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.section-note { font-weight: 400; font-size: 12px; color: var(--muted); }
+
 /* ---- 3D Viewer Panel ---- */
 
 .viewer-panel {

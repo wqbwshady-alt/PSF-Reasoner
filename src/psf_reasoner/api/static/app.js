@@ -191,6 +191,12 @@ function metric(label, value, detail) {
   return `<article class="metric"><span class="metric-label">${escapeHtml(label)}</span><strong class="metric-value">${escapeHtml(value)}</strong><small class="metric-detail">${escapeHtml(detail)}</small></article>`;
 }
 
+function confidenceColor(pct) {
+  if (pct >= 0.8) return "#2ecc71";
+  if (pct >= 0.6) return "#f1c40f";
+  return "#e74c3c";
+}
+
 function claimCard(item, showMeasurement = true) {
   const tagClasses = {
     computed: "tag-computed", required: "tag-required", inferred: "tag-inferred",
@@ -202,18 +208,31 @@ function claimCard(item, showMeasurement = true) {
   const value = showMeasurement && measurement
     ? `${measurement.name}: ${number(measurement.value, measurement.unit)}`
     : "";
+  const pct = item.confidence !== undefined ? item.confidence : 0;
+  const color = confidenceColor(pct);
   const confidence = item.confidence !== undefined
-    ? `<span class="confidence-badge">${Math.round(item.confidence * 100)}%</span>`
+    ? `<span class="confidence-badge" style="background:${color}">${Math.round(pct * 100)}%</span>`
     : "";
-  const provenance = item.provenance
-    ? `<div class="provenance">来源: ${item.provenance.map(p => escapeHtml(p.source)).join(", ")}</div>`
+  const supports = item.supports && item.supports.length
+    ? `<div class="claim-refs supports">↗ 支持: ${item.supports.map(id => `<a href="#${escapeHtml(id)}" class="ref-link">${escapeHtml(id)}</a>`).join(", ")}</div>`
     : "";
-  return `<article class="claim">
+  const contradicts = item.contradicts && item.contradicts.length
+    ? `<div class="claim-refs contradicts">↗ 矛盾: ${item.contradicts.map(id => `<a href="#${escapeHtml(id)}" class="ref-link">${escapeHtml(id)}</a>`).join(", ")}</div>`
+    : "";
+  const provenance = item.provenance && item.provenance.length
+    ? `<details class="provenance-details"><summary>来源详情</summary>${item.provenance.map(p => {
+        const method = p.method ? `<div class="prov-method">方法: ${escapeHtml(p.method)}</div>` : "";
+        const params = p.parameters && Object.keys(p.parameters).length
+          ? `<div class="prov-params">参数: ${escapeHtml(JSON.stringify(p.parameters))}</div>` : "";
+        return `<div class="prov-item"><strong>${escapeHtml(p.source)}</strong>${method}${params}</div>`;
+      }).join("")}</details>`
+    : "";
+  return `<article class="claim" id="${escapeHtml(item.id)}">
     <div class="claim-top"><strong>${escapeHtml(item.title)}</strong>${confidence}<span class="tag ${tagClass}">${escapeHtml(tag)}</span></div>
     <p>${escapeHtml(item.description)}</p>
     ${value ? `<div class="claim-meta">${escapeHtml(value)}</div>` : ""}
     ${item.limitations && item.limitations.length ? `<div class="claim-limits">局限性: ${escapeHtml(item.limitations.join("; "))}</div>` : ""}
-    ${provenance}
+    ${supports}${contradicts}${provenance}
   </article>`;
 }
 
@@ -270,7 +289,10 @@ function renderReport(report) {
     <section class="report-section"><h3>功能假设</h3><div class="claim-list">${report.functional_hypotheses.map(item => claimCard(item, false)).join("") || "<p>未生成正向功能假设。</p>"}</div></section>
     ${report.reverse_candidates && report.reverse_candidates.length ? `<section class="report-section"><h3>反向候选</h3><div class="claim-list">${report.reverse_candidates.map(item => claimCard(item, false)).join("")}</div></section>` : ""}
     ${report.consistency_checks && report.consistency_checks.length ? `<section class="report-section"><h3>一致性检查</h3><div class="claim-list">${report.consistency_checks.map(item => claimCard(item, false)).join("")}</div></section>` : ""}
+    <section class="report-section"><h3>缺失证据 <span class="section-note">需要实验验证</span></h3><div class="claim-list">${(report.missing_evidence || []).length ? report.missing_evidence.map(item => claimCard(item, false)).join("") : "<p>无缺失证据项。</p>"}</div></section>
     <section class="report-section"><h3>验证计划</h3><div class="claim-list">${report.validation_plan.steps.map(step => `<article class="claim"><div class="claim-top"><strong>${escapeHtml(step.objective)}</strong><span class="tag">优先级 ${step.priority}</span></div><p>${escapeHtml(step.method)}</p><div class="claim-meta">${escapeHtml(step.expected_result)}</div></article>`).join("")}</div></section>
+    <section class="report-section"><h3>报告局限性</h3><div class="claim-list">${(report.limitations || []).length ? report.limitations.map(l => `<article class="claim"><p>${escapeHtml(l)}</p></article>`).join("") : "<p>无。</p>"}</div></section>
+    <div class="calibration-warning">⚠️ 置信度为启发式排序值，非校准概率。参考基准测试评估推理质量。</div>
   `;
   elements.report.classList.remove("hidden");
 
