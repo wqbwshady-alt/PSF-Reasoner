@@ -127,3 +127,69 @@ Key decisions from the roadmap:
   feature expansion.
 - Batch execution (Phase 24) is now scheduled as Sprint M6, after the scientific
   foundation is solid.
+
+## 2026-07-14: Planning Corrections — Scientific Methodology and Priority Fixes
+
+User reviewed Phase 25–28 output and identified scientific methodology and priority
+issues. This round corrects the planning files only — no implementation.
+
+Corrections applied:
+
+1. **Phase status downgrades in `task_plan.md`:**
+   - Phase 18: complete → partial (typed/heuristic, not externally validated)
+   - Phase 20: complete → partial (truncation-only prototype, not general mutation modeller)
+   - Phase 22: complete → partial (evidence-responsive ranking, not calibrated inference)
+   - Phase 23: complete → partial (single qualitative label, not experimental benchmark)
+   - Git error note updated: marked [HISTORICAL], repo now has 17 commits
+
+2. **Gap re-tiering:**
+   - G1 (API path security) moved from Tier 2 → Tier 1: Cloud Run is deployed,
+     public API accepting filesystem paths is an active risk
+   - G7 (CI/CD) moved from Tier 4 → Tier 2: deployed service without automated
+     verification is urgent
+   - G3 (benchmark) re-scoped: pilot dataset with mechanism labels, not calibration
+     benchmark
+   - G8 (confidence calibration) re-scoped: exploratory analysis only, no replacement
+     of heuristic confidence without meeting 6 gate criteria
+
+3. **New Sprint N0 added:** Security hardening + basic CI — must complete before any
+   other sprint. Includes: API path sanitization, upload-ID-only endpoints, Cloud Run
+   IAM audit, GitHub Actions CI + Docker build verification.
+
+4. **Sprint N1 split into N1A + N1B:**
+   - N1A: Benchmark protocol + schema design (BenchmarkCase dataclass with separate
+     functional outcome and mechanism label fields, assay conditions, background
+     mutations, exclusion flags, review status)
+   - N1B: Pilot dataset curation (≥10 cases, explicitly labelled as pilot, not benchmark)
+
+5. **Confidence calibration corrected (M2):**
+   - Removed Platt scaling / isotonic regression on ~10 cases
+   - Replaced with exploratory reliability analysis only
+   - All confidence stays `uncalibrated` until 6 explicit gate criteria are met:
+     (1) ≥30 held-out cases across ≥2 families, (2) independent split, (3) external
+     physical evidence validation, (4) method chosen from observed calibration curve,
+     (5) Brier score + reliability diagram + ECE with bootstrap CIs, (6) expert review
+   - Calibration code lives in `evaluation/`, not `reasoning/`
+
+6. **Module ownership corrected:**
+   - `src/psf_reasoner/evaluation/` — benchmark runner, metrics, comparison, calibration
+   - `benchmarks/` — data, documentation, frozen evaluation configs
+   - `tests/` — loading, logic, and regression tests only
+   - NOT in `physical/` or `reasoning/`
+
+7. **Dependency order corrected:**
+   - N0 (security+CI) first — cannot wait 3 months
+   - N1A → N1B → M1 (external validation) → 修正规则 → M1b (freeze benchmark) → M2+M3
+   - M2 and M3 now depend on M1b (frozen benchmark) + M1 (external validation),
+     not just N1
+   - M2 does not produce calibrated confidence — only exploratory analysis
+
+8. **Ki/Kd/IC50 methodology fixed:**
+   - Different assay types are never pooled as a single absolute scale
+   - Functional outcome (affinity change) ≠ mechanism ground truth
+   - Each case records: assay type, conditions, WT/mutant values in original units,
+     fold-change or normalized direction, PMID/DOI, source table/figure
+   - Mechanism label is a separate field with its own evidence source and review status
+
+All three planning files (`task_plan.md`, `findings.md`, `progress.md`) are now
+consistent with each other and with the corrected scientific methodology.

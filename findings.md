@@ -3,7 +3,7 @@
 ## Initial State
 
 - The project directory was confirmed empty.
-- It was not initialized as a Git repository.
+- It was not initialized as a Git repository. [HISTORICAL — resolved 2026-07-13: repo initialized with 17 commits on `main` as of 2026-07-14.]
 - The user approved implementation of a clean first foundation after reviewing the phased plan.
 
 ## Scientific/Product Constraints
@@ -149,34 +149,31 @@
   execution; batch work should first target reproducibility, manifests, persistence, and
   measured profiling rather than distributed compute.
 
-## 2026-07-14 Phase 26: Gap and Risk Assessment
+## 2026-07-14 Phase 26: Gap and Risk Assessment (Corrected)
 
-Gaps are ranked by **impact × uncertainty × dependency** — a gap that blocks multiple
-downstream items and has high uncertainty is ranked higher than one that is isolated.
+Gaps are ranked by **impact × urgency × dependency** — a gap that is actively exploitable
+or blocks multiple downstream items is ranked higher than one that is isolated.
 
-### Tier 1 — Critical (blocks scientific credibility)
+### Tier 1 — Critical (blocks safety, scientific credibility, or fundamental validation)
 
-**G1. 无校准基准 (No Calibration Benchmark)**
+**G1. 公网 API 接受任意服务器文件路径 (Public API Accepts Arbitrary Filesystem Paths)**
 
-Phase 23 claims "实验验证基准" exists, but the implementation has only one qualitative
-V82A/MK1 label. There is no curated numeric dataset (Ki, Kd, IC50, fold-change), no
-multi-case benchmark, no held-out test set. Without this, it is impossible to:
-- Know whether the inference engine ranks mechanisms correctly
-- Calibrate heuristic confidence values into actual probabilities
-- Compare baseline vs LLM reasoning quality
-- Publish or present quantitative results
+The JSON API endpoints (`/analyze`, `/forward`, `/reverse`) accept server-side filesystem
+paths in `AnalysisRequest.structure.path`. Cloud Run service is deployed and publicly
+accessible at `https://psf-cloud-compute-800903726899.us-central1.run.app`. This is a
+path-traversal vulnerability in any multi-user or publicly reachable deployment. The
+file-upload endpoints bypass this issue, but the JSON endpoints do not.
 
-Impact: blocks publication, clinical credibility, and any claim of "validation."
-Uncertainty: medium (curation is mechanical but tedious; finding the right data sources
-requires domain judgment).
-Dependency: blocks G3 (confidence calibration), G8 (reasoning comparison).
+Impact: blocks any shared or public API usage. Currently exploitable.
+Urgency: immediate — the service is deployed.
+Dependency: requires artifact abstraction (upload → ID → reference).
 
 **G2. 相互作用引擎未经验证 (Interaction Engine Not Validated)**
 
-Phase 18 claims a "validated interaction engine" but the implementation is a heuristic
-baseline. Specific unvalidated aspects:
+Phase 18 is marked complete but the implementation is a typed/heuristic baseline.
+Specific unvalidated aspects:
 - H-bond geometry: H positions estimated (not observed), angle check uses heavy-atom proxy
-  fallback at 90° (vs standard 110°)
+  fallback at 90° (vs standard 110° in HBPLUS/DSSP)
 - Aromaticity: name/connectivity heuristic, not quantum-chemical or database-derived
 - Water bridges: distance-only partner selection, no H-bond geometry on water
 - Ligand atom typing: confidence as low as 0.30 for carbon, element-only for O/S without
@@ -184,443 +181,537 @@ baseline. Specific unvalidated aspects:
 - No comparison against established tools (HBPLUS, DSSP, Arpeggio, PLIP)
 
 Impact: every downstream mechanism and hypothesis inherits these uncertainties.
-Uncertainty: low (the limitations are well understood).
-Dependency: blocks G10 (interaction engine rebuild/validation).
+Dependency: blocks meaningful benchmark evaluation and mechanism comparison.
 
-**G3. 置信度未校准 (Confidence Values Not Calibrated)**
+**G3. 无校准基准 (No Calibration Benchmark — Pilot Dataset Required)**
 
-The report explicitly states confidence is heuristic and uncalibrated, which is honest.
-But without calibration, the 93%/87%/72% numbers shown in the UI are indistinguishable
-from random numbers to a reader. The calibration provider has one qualitative label;
-there is no calibration curve, reliability diagram, or Brier score.
+Phase 23 is marked complete but the implementation has only one qualitative V82A/MK1
+calibration label. There is no curated numeric dataset, no multi-case collection, no
+held-out test set, and — critically — no mechanism gold labels. Without mechanism-level
+ground truth, it is impossible to:
+- Know whether the inference engine ranks mechanisms correctly
+- Compare baseline vs LLM reasoning quality
+- Assess whether confidence scores carry any signal
 
-Impact: the primary output metric is scientifically unactionable.
-Uncertainty: medium (requires G1 first, then calibration methodology).
-Dependency: depends on G1.
+Experimental affinity/resistance data (Ki, Kd, IC50, fold-change) measures functional
+outcome, not mechanism correctness. A mutation can change binding affinity through
+multiple distinct structural mechanisms, and the correct mechanism is not automatically
+identified by the functional measurement.
 
-### Tier 2 — High (blocks product readiness)
+Impact: blocks any claim of mechanism-ranking validity.
+Dependency: must be preceded by G2 (interaction validation) so the physical evidence
+feeding into the benchmark is itself defensible.
+
+### Tier 2 — High (blocks product readiness and development velocity)
 
 **G4. 突变建模仅支持截断型 (Mutation Modeling: Truncation Only)**
 
-The LocalSideChainMutationModeler can only handle V→A, I→A, F→A — cases where the
-target residue is a subset of the source. It removes incompatible atoms but never
-adds them. It cannot model:
-- A→V (adding CG1/CG2)
-- A→F (adding aromatic ring)
-- Any gain-of-size mutation
-- Any mutation requiring rotamer sampling or backbone relaxation
+The LocalSideChainMutationModeler removes incompatible atoms but never adds them.
+Cannot model gain-of-size mutations (A→V, A→F, any mutation requiring new atoms,
+rotamer sampling, or backbone relaxation). Phase 20 is marked complete but is a
+truncation-only prototype.
 
-Impact: the automatically-generated mutant path is unavailable for the majority of
-clinically relevant mutations.
-Uncertainty: low (the limitation is inherent in the design).
-Dependency: requires integration with an external modeler (FoldX, Rosetta, SCWRL)
-or a more sophisticated internal implementation.
+Impact: automatically-generated mutant path unavailable for the majority of clinically
+relevant mutations.
+Dependency: requires integration with an external modeler or more sophisticated
+internal implementation.
 
 **G5. 前端审计字段缺失 (Frontend Omits Audit Fields)**
 
-The web UI renders evidence, mechanisms, hypotheses, candidates, consistency checks, and
-validation steps. But it does NOT render:
-- `missing_evidence` — the "what we need to measure to confirm" section
-- `supports`/`contradicts` references — the causal graph edges
-- `provenance` details beyond source name — method + parameters not shown
-- `limitations` on individual claims (shown on some items but not systematically)
-- The non-calibration warning that exists in the Python report
+The web UI does not render: `missing_evidence`, `supports`/`contradicts` causal graph,
+full `provenance` (method + parameters), systematic `limitations`, or the
+non-calibration warning. The UI displays heuristic confidence as a percentage without
+context that it is uncalibrated.
 
-Impact: the web UI presents results as a flat list of claims without the audit trail
-that makes PSF-Reasoner distinct from a black-box predictor.
-Uncertainty: low (pure UI work).
-Dependency: none.
+Impact: the primary user-facing output omits the audit trail that distinguishes
+PSF-Reasoner from a black-box predictor.
+Dependency: none — pure UI work.
 
 **G6. 文档不一致 (Documentation Drift)**
 
 `docs/architecture.md` describes LLM reasoners as "future," mutation modeling as
-"future interface," and electrostatics as "future." All three are now implemented.
-The README is more current but still incomplete — it doesn't mention the cloud
-pipeline, DeepSeek provider, or reverse-mode UI.
+"future interface," and electrostatics as "future." All three are now implemented
+(at prototype level). README is more current but still incomplete.
 
-Impact: new contributors or collaborators reading the docs would underestimate
-capabilities.
-Uncertainty: low (known exactly what to update).
+Impact: new contributors/collaborators would underestimate capabilities.
 Dependency: none.
 
-**G7. API 路径访问风险 (API Path-Access Security)**
+**G7. 无 CI/CD (No CI/CD Pipeline)**
 
-The JSON API accepts server-side filesystem paths in `AnalysisRequest.structure.path`.
-This works for a trusted local workbench but would be a path-traversal vulnerability
-in any multi-user deployment. The file-upload endpoints bypass this, but the JSON
-endpoints remain.
+No GitHub Actions, no automated test runs on push, no Docker build verification for
+the cloud service, no lint/format enforcement in CI. Cloud Run is deployed: any push
+could break the deployed service without automated signal. This was previously
+classified as Tier 4 (later-stage) but is urgent given the deployed Cloud Run service.
 
-Impact: blocks any shared or deployed API usage.
-Uncertainty: low (well-known pattern).
-Dependency: requires an artifact abstraction (upload first, then reference by ID).
+Impact: regressions can reach the deployed service undetected.
+Dependency: none (setup is mechanical).
+
+**G8. 置信度未校准且方法论需审慎设计 (Confidence Not Calibrated — Methodological Caution Required)**
+
+The report honestly states confidence is heuristic and uncalibrated. However, the
+previous roadmap proposed Platt scaling or isotonic regression on ~10 pilot cases to
+"replace" heuristic confidence. This is methodologically premature:
+- ~10 cases cannot support distribution-level calibration
+- Pilot cases are not an independent held-out set
+- Mechanism labels are not yet externally validated
+- Ki/Kd/IC50 cannot be pooled as a single absolute scale
+
+Impact: confidence values cannot be interpreted as probabilities.
+Dependency: requires G1 benchmark protocol, G2 external interaction validation,
+and a frozen held-out set of sufficient size before any calibration is attempted.
 
 ### Tier 3 — Medium (blocks robustness and scale)
 
-**G8. LLM vs Baseline 推理无对比基准 (No Reasoning Comparison Framework)**
+**G9. LLM vs Baseline 推理无对比框架 (No Reasoning Comparison Framework)**
 
-Both the Baseline and LLM reasoning engines run on the same inputs, but there is no
-systematic way to compare their outputs — no shared test cases with known answers,
-no inter-rater agreement metrics, no mechanism-level precision/recall. The current
-test suite only checks that LLM output is structurally valid JSON, not that it is
-scientifically correct.
+No systematic comparison methodology, no shared test cases with mechanism ground truth,
+no inter-rater agreement metrics. Current test suite only checks that LLM output is
+structurally valid JSON. Comparison must depend on a frozen benchmark with mechanism
+labels (not just functional outcomes) and externally validated physical evidence.
 
-Impact: cannot know whether adding LLM improves or degrades reasoning quality.
-Uncertainty: high (requires designing comparison methodology).
-Dependency: depends on G1 (benchmark).
+Impact: cannot assess whether LLM improves or degrades reasoning quality.
+Dependency: depends on G2 (interaction validation) and G3 (benchmark with mechanism labels).
 
-**G9. 测试覆盖有盲区 (Test Coverage Blind Spots)**
+**G10. 测试覆盖有盲区 (Test Coverage Blind Spots)**
 
-55 tests and 93% line coverage mask important gaps:
-- Interaction engine: 2 tests (H-bond + pi), no salt bridge, hydrophobic, or water bridge tests
-- Preparation: 1 test on a 6-atom synthetic fixture
-- No property-based tests (e.g., "any pair of oppositely charged atoms within 4Å should
-  form a salt bridge")
-- No edge-case tests: empty structures, all-glycine, no ligand, multi-model NMR
-- No performance regression tests
-- No security tests (path traversal, file upload limits, malicious PDB)
-- No persistence/restart tests for SQLite repository
+55 tests / 93% line coverage masks gaps: interaction engine has 2 tests, preparation has
+1 test, no property-based tests, no edge-case tests (empty structures, all-glycine, no
+ligand), no security tests (path traversal, malicious PDB), no persistence/restart tests.
 
-Impact: regressions in the interaction engine or parser could go undetected.
-Uncertainty: low (gap analysis is straightforward).
+Impact: regressions in critical paths could go undetected.
 Dependency: none.
-
-**G10. 物理证据未与外部工具对标 (No External Tool Benchmarking)**
-
-The interaction engine, pocket analysis, and energy scoring have never been compared
-against established tools:
-- Interactions: PLIP, Arpeggio, HBPLUS, DSSP
-- Pocket: FPocket (local), SiteMap, CASTp
-- Energy: FoldX, Rosetta, Amber
-
-Without this, the project cannot claim its physical evidence is scientifically
-defensible — only that it is internally consistent.
-
-Impact: reviewers will ask "how does this compare to PLIP/FoldX?"
-Uncertainty: medium (requires running external tools on the same structures).
-Dependency: none directly, but benefits from G1.
 
 **G11. 上传文件累积 (Upload Artifact Accumulation)**
 
-`.psf_uploads` has 90 entries. The SQLite persistence and upload lifecycle management
-(age-based pruning + count cap) were implemented in commit f282d98, but the existing
-accumulation suggests either the cleanup is not running or the default limits are too
-high. A startup cleanup hook exists in the API.
+`.psf_uploads` has 90 entries. Cleanup mechanism exists but effectiveness unverified.
 
-Impact: disk space grows unbounded if cleanup is not verified.
-Uncertainty: low (verify cleanup runs, adjust defaults).
+Impact: disk space grows unbounded if cleanup is not working.
 Dependency: none.
 
-### Tier 4 — Lower (nice-to-have, future stage)
+### Tier 4 — Lower (nice-to-have, deferred)
 
-**G12. 无批量执行 (No Batch Execution)** — Phase 24 explicitly deferred. Single-case
-latency (~0.3s) is fine; the gap is manifest management, resumability, and progress
-tracking for multi-mutation jobs.
+**G12. 无批量执行** — Phase 24 explicitly deferred.
+**G13. 单点蛋白质家族** — HIV-1 protease only; kinases, GPCRs untested.
+**G14. web 工作台示例依赖服务器路径** — Fails in packaged/deployed contexts.
 
-**G13. 无 CI/CD** — No GitHub Actions, no automated test runs on push, no Docker
-build verification for the cloud service.
-
-**G14. 单点蛋白质 (Single Protein Family)** — All testing and calibration is on
-HIV-1 protease. The system claims to be general but has never been run on kinases,
-GPCRs, or other therapeutically relevant families.
-
-**G15. web 工作台示例依赖服务器路径** — The built-in example uses
-`examples/data/1sdt.cif` which is relative to the server working directory. This
-fails in packaged/deployed contexts.
-
-### Risk Matrix
+### Risk Matrix (Corrected)
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
-| Reviewer rejects quantitative claims due to uncalibrated confidence | High | High | G1+G3: add benchmark + calibration before any publication |
-| Interaction engine produces false negatives (missed H-bonds) | Medium | Medium | G2+G10: validate against PLIP/Arpeggio |
-| LLM generates plausible but scientifically wrong mechanisms | Medium | High | G8: comparison framework with expert review |
-| Path traversal in shared deployment | Low (single-user now) | High | G7: artifact abstraction before any shared deployment |
-| Disk exhaustion from upload accumulation | Low | Low | G11: verify cleanup, add monitoring |
-| Documentation misleads new contributors | Medium | Low | G6: docs refresh pass |
+| Path traversal on deployed Cloud Run API | Low (single-user now) | Critical | N0: artifact abstraction + upload-ID-only API |
+| Interaction engine produces false negatives | Medium | High | M1: validate against PLIP/Arpeggio before benchmark freeze |
+| Mechanism ranking evaluated without ground truth | High | High | N1A+N1B: protocol + pilot dataset with mechanism labels |
+| Confidence numbers misinterpreted as probabilities | High | Medium | M2 gate criteria: stay uncalibrated until held-out set and external validation complete |
+| Cloud Run regression from unreviewed push | Medium | High | N0: GitHub Actions CI + Docker build check |
+| LLM generates plausible but wrong mechanisms | Medium | High | M3: comparison against frozen benchmark with mechanism labels |
 
-## 2026-07-14 Phase 27: Executable Next-Stage Roadmap
+## 2026-07-14 Phase 27: Executable Next-Stage Roadmap (Corrected)
 
-### Near-Term (2-4 weeks): Audit Closure + Credibility Foundation
+### Corrected Dependency Order
 
-These items close the Phase 25 audit findings and lay the groundwork for all later
-scientific work. Each is independent enough to be worked on in parallel.
+```
+N0 (security + CI)
+  → N1A (benchmark protocol + schema design)
+  → N1B (pilot dataset curation with mechanism labels)
+  → M1 (external interaction validation against PLIP/Arpeggio)
+  → 根据外部验证结果修正物理规则
+  → 冻结 formal benchmark + held-out set
+  → M3 (Baseline vs LLM comparison)
+  → 评估样本量是否支持校准 → M2 (calibration evaluation, exploratory only)
+```
+
+### Near-Term (2-4 weeks): Safety Foundation + Scientific Protocol Design
 
 ---
 
-**Sprint N1. 构建最小校准基准 (Minimal Calibration Benchmark)** ← addresses G1
+**Sprint N0. 安全加固 + 基础 CI (Security Hardening + Basic CI)** ← addresses G1, G7
+
+Priority: **最高. Must complete before any other sprint.** Cloud Run 已部署,
+公开 API 接受任意文件路径是不可接受的风险。
 
 Acceptance criteria:
-- A CSV/JSON file checked into `examples/benchmarks/` with ≥10 HIV-1 protease
-  mutation cases
-- Each row: PDB ID(s), mutation, ligand, experimental Ki/Kd/IC50 or fold-change,
-  literature PMID
-- A `benchmark.py` module that loads cases and runs the full pipeline on each,
-  comparing mechanism ranking to experimental outcome
-- A summary metric: "mechanism ranking accuracy" (does the top-ranked mechanism
-  match the known resistance mechanism?)
+
+N0A — API 安全:
+- JSON API endpoints (`/analyze`, `/forward`, `/reverse`) no longer accept server-side
+  filesystem paths in `structure.path` or `mutant_structure.path`
+- Endpoints accept only: (a) multipart file upload, or (b) a previously-uploaded
+  artifact ID
+- `StructureInput` gains optional `upload_id: str | None` field; when present,
+  the path is resolved from the upload store, not the filesystem
+- Path traversal tests added: `../../etc/passwd`, absolute paths, symlink attacks
+- Malformed PDB/CIF uploads return 422, not 500
+
+N0B — Cloud Run 安全审查:
+- Verify Cloud Run IAM configuration: who can invoke the service?
+- Confirm authentication status (public / IAM-gated / API-key)
+- Document the current exposure surface in `cloud/SECURITY.md`
+- If service is publicly invokable, add minimum protection (even a shared secret
+  header check is better than wide open)
+
+N0C — 基础 CI:
+- `.github/workflows/ci.yml`: pytest + ruff format --check + ruff check on push/PR
+- `.github/workflows/cloud-build.yml`: Docker build verification for `cloud/Dockerfile`
+  (does not need to push/deploy, just verify the build succeeds)
+- CI runs on Python 3.12 (reference runtime)
+- Both workflows must pass before any future PR merge
 
 Files to create/modify:
-- `examples/benchmarks/hiv1_protease_benchmark.json` — curated data
-- `tests/test_benchmark.py` — ≥3 test cases that verify benchmark loads and runs
-- `src/psf_reasoner/physical/benchmark.py` — benchmark runner
+- `src/psf_reasoner/api/app.py` — strip filesystem path acceptance, add upload ID resolution
+- `src/psf_reasoner/schemas/inputs.py` — `StructureInput.upload_id`
+- `src/psf_reasoner/infrastructure/uploads.py` — `resolve_upload(upload_id) -> Path`
+- `tests/test_api.py` — path traversal, malicious upload, upload-ID flow tests
+- `.github/workflows/ci.yml` — new
+- `.github/workflows/cloud-build.yml` — new
+- `cloud/SECURITY.md` — new
+
+---
+
+**Sprint N1A. 基准协议与 Schema 设计 (Benchmark Protocol & Schema Design)** ← addresses G3
+
+Prerequisite: N0 complete.
+Priority: 必须先于任何数据整理,确保协议能区分 functional outcome 和 mechanism label.
+
+Acceptance criteria:
+
+Benchmark data schema (per case):
+```python
+class BenchmarkCase:
+    # --- Identity ---
+    case_id: str                          # e.g. "hiv1-v82a-mk1"
+    protein_family: str                   # e.g. "HIV-1_protease"
+    protein_uniprot: str | None           # optional
+
+    # --- WT structure ---
+    wt_pdb_id: str                        # e.g. "1SDT"
+    wt_chain: str
+    wt_mutation_background: list[str]     # background mutations relative to reference
+
+    # --- Mutant structure ---
+    mutant_pdb_id: str | None             # None if mutant is modelled only
+    mutant_source: str                    # "experimental" | "modelled" | "unknown"
+    mutation_notation: str                # e.g. "V82A"
+    mutation_chain: str
+
+    # --- Ligand ---
+    ligand_identifier: str                # e.g. "MK1"
+    ligand_chain: str | None
+
+    # --- Functional outcome (experimental) ---
+    assay_type: str                       # e.g. "IC50", "Ki", "Kd", "fold_change"
+    assay_conditions: str                 # e.g. "pH 4.7, 25°C, 0.1 M NaCl"
+    wt_value: float
+    wt_unit: str
+    mutant_value: float
+    mutant_unit: str                      # must match wt_unit
+    fold_change: float | None             # computed or reported
+    direction: str                        # "increase" | "decrease" | "unchanged"
+    phenotype: str                        # e.g. "drug_resistance", "activity_loss"
+
+    # --- Literature provenance ---
+    pmid: str
+    doi: str | None
+    source_table_or_figure: str           # e.g. "Table 2, row 3"
+    notes: str                            # free-text: any caveats, data extraction notes
+
+    # --- Mechanism label (expert-curated, separate from functional outcome) ---
+    mechanism_label: str | None           # e.g. "loss of hydrophobic packing at S1 pocket"
+    mechanism_evidence: str               # "literature" | "structural_analysis" | "expert_review" | "none"
+    mechanism_source: str | None          # e.g. "PMID:12345678, Figure 4"
+    mechanism_review_status: str          # "unreviewed" | "single_reviewer" | "consensus"
+    mechanism_confidence: float           # 0.0-1.0, curator's confidence in this label
+
+    # --- Exclusion flags ---
+    excluded_from_calibration: bool       # True if data quality issues, background mutations, etc.
+    exclusion_reason: str | None
+```
+
+Key design decisions encoded in the schema:
+- **Functional outcome and mechanism label are separate fields.** Ki/Kd/IC50 values
+  do not automatically prove any particular structural mechanism.
+- **Fold-change direction is recorded alongside absolute values.** Different assays
+  (Ki vs IC50 vs Kd) measure different things and MUST NOT be pooled as a single
+  absolute numeric scale.
+- **Assay conditions are mandatory.** pH, temperature, and buffer composition affect
+  affinity measurements and limit cross-case comparability.
+- **Background mutations are explicit.** HIV-1 protease clinical isolates often carry
+  multiple mutations; the benchmark must record which mutations are present beyond
+  the primary one under study.
+- **Mechanism label tracks review status.** A label from literature is different from
+  a label the curator assigned by inspection; both are different from a consensus
+  multi-reviewer label.
+- **Exclusion flags** allow cases to be in the dataset without contaminating evaluation.
+  A case with 4 background mutations and uncertain mechanism may still be useful for
+  qualitative inspection.
+
+Evaluation protocol (separate from data):
+- `evaluation/benchmark_runner.py`: loads `BenchmarkCase` list, runs each through
+  the full pipeline, collects `PSFReport`
+- `evaluation/metrics.py`: mechanism ranking metrics (top-N accuracy, mean reciprocal
+  rank, mechanism agreement with label where mechanism_label is not None)
+- `evaluation/comparison.py`: side-by-side Baseline vs LLM comparison on the same cases
+- NOT in `physical/` — evaluation is a separate domain from physical evidence computation
+
+Files to create:
+- `src/psf_reasoner/evaluation/__init__.py`
+- `src/psf_reasoner/evaluation/protocols.py` — `BenchmarkCase` dataclass, `BenchmarkDataset`
+- `src/psf_reasoner/evaluation/benchmark_runner.py`
+- `src/psf_reasoner/evaluation/metrics.py`
+- `src/psf_reasoner/evaluation/comparison.py`
+- `benchmarks/README.md` — data documentation, curation standards
+- `tests/test_evaluation.py` — verify loading, runner, metrics on synthetic data
+
+---
+
+**Sprint N1B. Pilot 数据整理 (Pilot Dataset Curation)** ← addresses G3
+
+Prerequisite: N1A complete (schema frozen).
+Priority: 产生首批可用于评估的数据,但必须明确标注为 pilot。
+
+Acceptance criteria:
+- ≥10 HIV-1 protease mutation cases curated into `benchmarks/hiv1_protease/pilot.json`
+- Each case follows the N1A BenchmarkCase schema
+- At least 5 cases have mechanism labels with evidence source (literature or
+  structural analysis)
+- At least 3 cases are excluded from quantitative evaluation with documented reasons
+- Each case has PMID/DOI and source table/figure reference
+- Ki/Kd/IC50 values are recorded in their original units with assay conditions —
+  NOT normalized to a single scale
+- The dataset is explicitly labelled as **pilot** — not "benchmark," not "gold standard"
+- A `benchmarks/hiv1_protease/pilot.md` documents: search strategy, inclusion/exclusion
+  criteria, known limitations, and the distinction between functional outcome labels
+  and mechanism labels
+
+Files to create:
+- `benchmarks/hiv1_protease/pilot.json`
+- `benchmarks/hiv1_protease/pilot.md`
+- `benchmarks/hiv1_protease/README.md` — family context, known biases
 
 ---
 
 **Sprint N2. 前端审计追踪补全 (Web UI Audit Trail)** ← addresses G5
 
-Acceptance criteria:
-- Report renders `missing_evidence` section with each item's description and
-  required measurement
-- Report renders `supports`/`contradicts` as links between claim cards (clicking
-  a support reference scrolls to that evidence item)
-- Claim cards expand to show full `provenance` (method + parameters), not just
-  source name
-- A visible calibration warning: "置信度为启发式排序值，非校准概率。参考基准测试
-  评估推理质量。"
-- Confidence badge uses a color scale (red→yellow→green) instead of raw percentage
+Acceptance criteria: (unchanged from previous version — still valid)
+- Report renders `missing_evidence` section
+- Report renders `supports`/`contradicts` causal links
+- Claim cards expand to show full `provenance`
+- Calibration warning: "置信度为启发式排序值，非校准概率。"
+- Confidence badge uses color scale instead of raw percentage
 
 Files to modify:
-- `src/psf_reasoner/api/static/app.js` — `renderReport()`, `claimCard()`
-- `src/psf_reasoner/api/static/styles.css` — new styles for graph edges, expanded
-  provenance, calibration warning
+- `src/psf_reasoner/api/static/app.js`
+- `src/psf_reasoner/api/static/styles.css`
 
 ---
 
 **Sprint N3. 文档刷新 (Documentation Refresh)** ← addresses G6
 
 Acceptance criteria:
-- `docs/architecture.md` updated: LLM reasoners marked as implemented, mutation
-  modeling described as prototype/local-truncation, electrostatics/cloud pipeline
-  documented, Cloud Run architecture added to panorama
-- `README.md` updated: cloud pipeline, DeepSeek provider, reverse-mode UI,
-  H-bond geometry estimation, Chinese i18n all mentioned
-- `findings.md` audit gap summary added to a new `docs/known-gaps.md` (or linked
-  from README)
+- `docs/architecture.md`: mark LLM reasoners as implemented (prototype), mutation
+  modeling as truncation-only prototype, document Cloud Run architecture
+- `README.md`: add cloud pipeline, DeepSeek, reverse-mode UI, H-bond estimation, i18n
+- Phase statuses for 18/20/22/23 accurately reflect partial/prototype implementation
 
 Files to modify:
 - `docs/architecture.md`
 - `README.md`
-- New: `docs/known-gaps.md` (optional, could also be a link to findings.md)
+- `task_plan.md` (already corrected in this round)
 
 ---
 
-**Sprint N4. 关键测试缺口补全 (Critical Test Gap Closure)** ← addresses G9 (partial)
+**Sprint N4. 关键测试缺口补全 (Critical Test Gap Closure)** ← addresses G10 (partial)
 
-Acceptance criteria:
-- Interaction engine: ≥8 tests covering every interaction type (H-bond, salt bridge,
-  hydrophobic, pi, water bridge) + edge cases (no donor/acceptor, out of cutoff,
-  empty waters, no aromatic rings)
-- Preparation inspector: ≥3 tests (synthetic fixture with explicit waters, fixture
-  with altlocs, fixture with missing atoms)
-- Property-based test: "for any random pair of oppositely charged atoms within 4Å,
-  a salt bridge is formed" (using a small hand-written property check, not a full
-  Hypothesis framework)
-- Upload cleanup: 1 test verifying that `cleanup_uploads()` removes files older
-  than the configured age
-
-Files to modify:
-- `tests/test_interactions.py`
-- `tests/test_preparation.py`
-- New: `tests/test_uploads.py`
+Acceptance criteria: (unchanged from previous version)
+- Interaction engine: ≥8 tests covering all types + edge cases
+- Preparation inspector: ≥3 tests
+- Security tests: path traversal, malicious upload (added scope from N0)
 
 ---
 
 **Sprint N5. 上传清理验证 (Upload Cleanup Verification)** ← addresses G11
 
-Acceptance criteria:
-- `.psf_uploads` directory has ≤20 files after running the startup cleanup
-- Age-based pruning verified: files older than 7 days are removed
-- Count cap verified: when >50 files, oldest are removed first
-- Cleanup runs on API startup and via `/admin/maintain-uploads`
-
-Files to modify:
-- `src/psf_reasoner/infrastructure/uploads.py` — verify/update defaults
-- `src/psf_reasoner/api/app.py` — ensure startup event triggers cleanup
+Acceptance criteria: (unchanged from previous version)
 
 ---
 
-### Mid-Term (1-3 months): Scientific Validation + Robustness
+### Mid-Term (1-3 months): Scientific Validation
 
-These items require the near-term work as foundation and involve deeper scientific
-validation.
+These items depend on near-term completion and must proceed in the corrected dependency order.
 
 ---
 
-**Sprint M1. 相互作用引擎外部验证 (External Interaction Validation)** ← addresses G2+G10
+**Sprint M1. 相互作用引擎外部验证 (External Interaction Validation)** ← addresses G2
+
+Prerequisite: N1A (protocol), N1B (pilot data), N4 (interaction tests).
+Must complete BEFORE benchmark freeze and before any mechanism-level comparison.
 
 Acceptance criteria:
-- Run PLIP (or Arpeggio) on the same 1SDT/1SDV structure pair
-- Compare H-bond, salt bridge, hydrophobic, and pi interaction counts between
-  PSF-Reasoner and the reference tool
-- Document agreement rate and systematic differences
-- Adjust interaction parameters (cutoffs, angle thresholds) where PSF-Reasoner
-  systematically disagrees with reference tools
+- Run PLIP and/or Arpeggio on the structures in the pilot dataset
+- Compare interaction counts by type (H-bond, salt bridge, hydrophobic, pi, water bridge)
+  between PSF-Reasoner and each reference tool
+- Document per-type agreement rates and systematic differences
+- Where PSF-Reasoner systematically disagrees with ≥2 reference tools, adjust
+  parameters (cutoffs, angle thresholds, typing rules)
+- Re-run pilot dataset through corrected interaction engine
 - Publish comparison table in `docs/interaction-validation.md`
 
-New dependency: PLIP (Python package) or Arpeggio (web service)
+New dependency: PLIP (`pip install plip`) or Arpeggio web service
 
 ---
 
-**Sprint M2. 置信度校准 (Confidence Calibration)** ← addresses G3
+**Sprint M1b. 基准冻结 (Formal Benchmark Freeze)** ← new sprint
 
-Prerequisite: Sprint N1 (benchmark)
+Prerequisite: M1 complete (physical evidence validated externally).
 
 Acceptance criteria:
-- Using the benchmark from N1, produce a calibration curve: heuristic confidence
-  vs actual mechanism-ranking accuracy
-- Implement a simple Platt scaling or isotonic regression calibrator
-- Calibrated confidence values replace heuristic ones when benchmark data is available
-- Report gains a `calibration_status` field: "uncalibrated" | "calibrated_against_hiv1"
+- Pilot dataset expanded or pruned to a formal benchmark
+- Mechanism labels reviewed by at least one additional reviewer (or consensus review)
+- Held-out test set split from training/development cases
+- Split strategy documented: mutation-level split (same mutation's WT/mutant structures
+  must go to the same split); structure-family-level split preferred to avoid
+  data leakage across closely related PDB entries
+- Benchmark versioned (`v1.0.0`) with frozen hash and changelog
+- No further changes to cases, labels, or splits without version bump
+
+Files to modify:
+- `benchmarks/hiv1_protease/` — move pilot → formal, add split metadata
+
+---
+
+**Sprint M2. 置信度校准评估 (Confidence Calibration Evaluation)** ← addresses G8
+
+Prerequisite: M1b (frozen benchmark with held-out set).
+Methodology constraint: this is an EXPLORATORY evaluation, not a calibration deployment.
+
+Acceptance criteria:
+- Run the frozen benchmark through the pipeline; collect heuristic confidence values
+  and mechanism-ranking outcomes
+- Compute exploratory reliability metrics: reliability diagram (binned), Brier score,
+  expected calibration error (ECE), bootstrap confidence intervals on each metric
+- Analysis is performed ONLY on the held-out test set — development cases used for
+  any parameter tuning are excluded from the final report
+- Results are reported in `docs/calibration-analysis.md` with all caveats
+- Confidence values REMAIN marked `uncalibrated` in the report output
+- The `calibration_status` field stays `"uncalibrated"` — there is no code path
+  that replaces heuristic confidence with "calibrated" values
+
+**Gate criteria — when may calibrated confidence be enabled?**
+
+All of the following must be true before the `calibration_status` may change from
+`"uncalibrated"` to anything else:
+
+1. **Sample size:** ≥30 cases in the held-out set with mechanism labels, spanning
+   ≥2 protein families.
+2. **Independence:** Held-out set is a mutation-level or structure-family-level split
+   from the development set; no case-ID overlap; documented in versioned split metadata.
+3. **Physical evidence validation:** Interaction engine has been compared to ≥2
+   external reference tools and systematic disagreements have been resolved (M1).
+4. **Calibration method:** Method is chosen based on calibration curve shape observed
+   in exploratory analysis (not pre-committed to Platt scaling or isotonic regression).
+5. **Metric:** Brier score + reliability diagram + ECE reported with bootstrap CIs.
+6. **Expert review:** At least one structural biologist who is not the primary developer
+   has reviewed the calibration methodology and output.
+
+Until ALL six gates are met, confidence values stay `uncalibrated` and the report
+carries the uncalibrated warning. Individual exploratory analyses may be published
+as supplementary material with appropriate caveats.
 
 Files to create/modify:
-- `src/psf_reasoner/reasoning/calibration.py` — calibrator
-- `src/psf_reasoner/schemas/report.py` — add `calibration_status`
+- `src/psf_reasoner/evaluation/calibration.py` — exploratory analysis only, does NOT
+  modify report confidence
+- `docs/calibration-analysis.md` — methodology, results, caveats
+- `tests/test_calibration_evaluation.py`
 
 ---
 
-**Sprint M3. LLM vs Baseline 对比框架 (Reasoning Comparison Framework)** ← addresses G8
+**Sprint M3. Baseline vs LLM 对比 (Reasoning Comparison)** ← addresses G9
 
-Prerequisite: Sprint N1 (benchmark)
+Prerequisite: M1b (frozen benchmark) + M1 (external physical validation).
+NOT only N1 — the benchmark must be frozen and physical evidence validated before
+mechanism-level comparison is meaningful.
 
 Acceptance criteria:
-- A `compare_reasoners.py` script runs both Baseline and LLM on the full benchmark
-- Outputs per-case: mechanism agreement (Jaccard), top-mechanism agreement,
-  confidence correlation
-- Summary report: cases where LLM disagrees with Baseline and which is correct
-  (per experimental outcome)
-- ≥3 test cases in `tests/test_reasoning_comparison.py`
+- Run both Baseline and LLM reasoners on the frozen benchmark (held-out set only
+  for final metrics; development set may be used for prompt engineering)
+- Per-case: mechanism-type agreement (Jaccard), top-mechanism agreement with label
+- Aggregate: mean reciprocal rank, top-N accuracy against mechanism labels
+- Report cases where LLM disagrees with Baseline, and which (if either) matches the label
+- Qualitative error analysis: what kinds of mechanisms does each engine miss?
+- Separate report for development set (prompt tuning) vs held-out set (final metrics)
 
 Files to create:
-- `src/psf_reasoner/reasoning/comparison.py`
-- `tests/test_reasoning_comparison.py`
+- `src/psf_reasoner/evaluation/comparison.py` — moved from `reasoning/comparison.py`
+- `tests/test_comparison_evaluation.py`
 
 ---
 
 **Sprint M4. 外部突变建模集成 (External Mutation Modeler Integration)** ← addresses G4
 
-Acceptance criteria:
-- A `FoldXMutationModeler` adapter (or SCWRL/Rosetta equivalent) that implements
-  the existing `MutationModeler` protocol
-- Handles gain-of-size mutations (A→V, A→F, etc.)
-- Records engine version, settings, and explicit "modelled" status
-- Falls back to LocalSideChainMutationModeler for truncation cases (faster, no
-  external dependency)
-- ≥2 test cases: one truncation (uses local), one gain-of-size (uses external)
-
-New dependency: FoldX (binary, free for academic use) or PyRosetta
+(unchanged from previous version)
 
 ---
 
-**Sprint M5. API 安全加固 (API Security Hardening)** ← addresses G7
+**Sprint M5. 批量执行 (Batch Execution)** ← Phase 24, addresses G12
 
-Acceptance criteria:
-- JSON API endpoints (`/analyze`, `/forward`, `/reverse`) no longer accept
-  filesystem paths in `structure.path` — they require an upload ID or inline
-  file upload
-- File upload endpoints (`/analyze-upload`, `/reverse-upload`) become the
-  primary API surface
-- Uploaded files stored with content-hash-based names, not original names
-- Path traversal tests added (attempt `../../etc/passwd` style paths)
-
-Files to modify:
-- `src/psf_reasoner/api/app.py`
-- `src/psf_reasoner/schemas/inputs.py` — `StructureInput` gains upload_id field
-- `tests/test_api.py`
-
----
-
-**Sprint M6. 批量执行 (Batch Execution)** ← Phase 24, addresses G12
-
-Acceptance criteria:
-- A `BatchManifest` schema: list of `AnalysisRequest`s with shared config
-- `BatchRunner`: runs jobs sequentially with progress tracking, writes per-job
-  reports to SQLite
-- Failed jobs don't abort the batch; errors collected in manifest
-- `psf batch run manifest.json` CLI command
-- ≥2 tests: successful batch, batch with one failure
-
-Files to create/modify:
-- `src/psf_reasoner/schemas/batch.py` — BatchManifest, BatchResult
-- `src/psf_reasoner/application/batch_runner.py`
-- `src/psf_reasoner/cli.py` — add `batch` command
-- `tests/test_batch.py`
+(unchanged from previous version)
 
 ---
 
 ### Later-Stage (3+ months): Scale + Generalization
 
-These items are explicitly deferred and should be re-evaluated after the mid-term
-milestones are complete.
+- **L1. 多蛋白家族验证** ← requires M1b (frozen benchmark protocol proven on one family)
+- **L2. 生产部署硬化** — rate limiting, authentication, PostgreSQL migration, monitoring
+- **L3. 云端管线扩展** — MD/MM-PBSA/docking adapters
+- **L4. 多评估者机制标签审查** — formal inter-rater reliability study for mechanism labels
 
----
-
-**L1. 多蛋白家族验证 (Multi-Protein-Family Validation)** ← addresses G14
-
-- Curate benchmarks for ≥2 additional protein families (kinases, GPCRs, or
-  serine proteases)
-- Run full pipeline on each, compare mechanism ranking accuracy across families
-- Identify family-specific parameter adjustments or limitations
-
----
-
-**L2. CI/CD 管线 (CI/CD Pipeline)** ← addresses G13
-
-- GitHub Actions: test suite on push/PR, ruff lint, type checking
-- Docker build verification for cloud service
-- Benchmark regression test: fails if mechanism ranking accuracy drops below threshold
-
----
-
-**L3. 云端管线扩展 (Cloud Pipeline Expansion)**
-
-- MD simulation adapter (OpenMM/GROMACS) for local relaxation of modelled mutants
-- MM/PBSA or MM/GBSA binding free energy estimation
-- Docking adapter (AutoDock Vina/Smina) for binding pose prediction
-
----
-
-**L4. 生产部署硬化 (Production Hardening)**
-
-- Rate limiting, authentication, HTTPS enforcement
-- Database migration framework for SQLite → PostgreSQL
-- Monitoring, logging, alerting
-
----
-
-### Dependency Graph
+### Corrected Dependency Graph
 
 ```
-Near-Term (parallelizable):
-  N1 (benchmark) ─────────────────────────┐
-  N2 (UI audit trail)                      │
-  N3 (docs refresh)                        │
-  N4 (test gaps)                           │
-  N5 (upload cleanup)                      │
-                                           │
-Mid-Term (respects dependencies):          │
-  M1 (external validation) ◄───────────────┤
-  M2 (confidence calibration) ◄── N1       │
-  M3 (reasoning comparison) ◄── N1         │
-  M4 (external modeler) ◄──────────────────┤
-  M5 (API security) ◄──────────────────────┤
-  M6 (batch execution) ◄───────────────────┘
+Near-Term:
+  N0 (security + CI) ──────────────────────── 最高优先级, 无前置依赖
+    │
+    ├── N1A (benchmark protocol) ◄── N0
+    │     │
+    │     └── N1B (pilot data) ◄── N1A
+    │
+    ├── N2 (UI audit trail) ◄── (独立, 可与 N1A 并行)
+    ├── N3 (docs refresh) ◄── (独立)
+    ├── N4 (test gaps) ◄── (独立)
+    └── N5 (upload cleanup) ◄── (独立)
+
+Mid-Term (respects dependencies):
+  N1B ──→ M1 (external interaction validation)
+              │
+              └──→ 修正物理规则 ──→ M1b (freeze benchmark + held-out split)
+                                        │
+                        ┌───────────────┤
+                        │               │
+                        ▼               ▼
+                M2 (calibration     M3 (reasoning
+                    evaluation,         comparison)
+                    exploratory
+                    only)
+                        │               │
+                        └───────┬───────┘
+                                │
+                                ▼
+                        M4 (external modeler)
+                        M5 (batch execution)
 
 Later-Stage (deferred):
-  L1 ← M2, M3
-  L2 ← CI readiness
+  L1 ← M1b
+  L2 ← M5
   L3 ← M4
-  L4 ← M5, M6
+  L4 ← M1b
 ```
 
-### Recommended Execution Order
+### Corrected Recommended Execution Order
 
-1. **Week 1-2:** N3 (docs) + N5 (uploads) in parallel — both are low-effort,
-   immediate wins
-2. **Week 1-4:** N1 (benchmark) — start early because M2 and M3 depend on it
-3. **Week 2-4:** N2 (UI audit trail) + N4 (test gaps) in parallel
-4. **Month 2:** M1 (external validation) + M5 (API security) — no shared
-   dependencies
-5. **Month 2-3:** M2 (calibration) + M3 (comparison) — both depend on N1
-6. **Month 3:** M4 (external modeler) + M6 (batch execution)
-7. **Month 4+:** Re-evaluate. If M1-M3 show strong scientific signal, prioritize
-   L1+L3. If engineering gaps are the bottleneck, prioritize L2+L4.
+1. **Week 1 (立即开始):** N0 (security + CI) — Cloud Run 已部署, 安全风险不能等
+2. **Week 1-2:** N1A (benchmark protocol) + N3 (docs) + N5 (uploads) 并行
+3. **Week 2-3:** N1B (pilot data curation) ← 等 N1A schema 稳定
+4. **Week 2-4:** N2 (UI audit trail) + N4 (test gaps) 并行
+5. **Month 2:** M1 (PLIP/Arpeggio validation) ← 依赖 N1B pilot 数据
+6. **Month 2:** 根据 M1 结果修正物理规则 → M1b (freeze benchmark)
+7. **Month 2-3:** M2 (exploratory calibration) + M3 (reasoning comparison) 并行 ← 都依赖 M1b
+8. **Month 3:** M4 (external modeler) + M5 (batch execution)
+9. **Month 4+:** 基于 M2 样本量评估是否满足 calibration gate criteria; 若满足则重新评估 L1-L4 优先级
