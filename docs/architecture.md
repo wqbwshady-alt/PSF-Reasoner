@@ -45,18 +45,18 @@
 │  │   Preparation│  │                      │  │  forward/reverse) │       │
 │  │ • Interaction│  │ Implementations:     │  │                  │       │
 │  │   Classifier │  │  • Baseline (rules)  │  │                  │       │
-│  │ • Pocket /   │  │  • LLM (future)      │  │                  │       │
-│  │   Network    │  │  • Hybrid (future)   │  │                  │       │
-│  │ • Energy /   │  │                      │  │                  │       │
-│  │   Scoring    │  │                      │  │                  │       │
+│  │ • Pocket /   │  │  • LLM (Anthropic    │  │                  │       │
+│  │   Network    │  │    Claude +          │  │                  │       │
+│  │ • Energy /   │  │    DeepSeek)         │  │                  │       │
+│  │   Scoring    │  │  • Hybrid (future)   │  │                  │       │
 │  │ • Mutation   │  │                      │  │                  │       │
 │  │   Modeling   │  │                      │  │                  │       │
+│  │   (truncation│  │                      │  │                  │       │
+│  │    only)     │  │                      │  │                  │       │
 │  │ • Calibration│  │                      │  │                  │       │
-│  │ • Sampling   │  │                      │  │                  │       │
-│  │   (future)   │  │                      │  │                  │       │
 │  │ • Electro-   │  │                      │  │                  │       │
 │  │   statics    │  │                      │  │                  │       │
-│  │   (future)   │  │                      │  │                  │       │
+│  │   (Cloud Run)│  │                      │  │                  │       │
 │  └──────────────┘  └──────────────────────┘  └──────────────────┘       │
 │                                                                          │
 ├──────────────────────────────────────────────────────────────────────────┤
@@ -79,7 +79,7 @@
 │                                                                          │
 │  Execution Backend    Report Repository    LLM Provider Gateway          │
 │  InlineExecution ·    InMemoryReport ·     LLMProvider (protocol)        │
-│  TaskQueue (future)   SQLite (future)      Anthropic/OpenAI (future)     │
+│  TaskQueue (future)   SQLite               Anthropic · DeepSeek          │
 │                                                                          │
 │  Literature Source      External Modeler      External Simulation        │
 │  Knowledge Base         FoldX / Rosetta       OpenMM / APBS              │
@@ -134,6 +134,9 @@ Pipeline
 | `api/` | FastAPI delivery adapter | `application/` (ports + runner), `bootstrap.py`, `schemas/` |
 | `cli.py` | Typer delivery adapter | `application/ports.py`, `bootstrap.py`, `schemas/` |
 | `bootstrap.py` | Composition root | `application/`, `physical/`, `reasoning/`, `infrastructure/` |
+| `evaluation/` | Benchmark protocol, runner, metrics, comparison, calibration | `schemas/`, `application/` |
+| `cloud/` | Cloud Run service (FPocket, Coulombic) + deployment config | independent (FastAPI microservice) |
+| `benchmarks/` | Curated benchmark datasets and documentation | `evaluation/` (data consumer) |
 
 ## Evidence Status Semantics
 
@@ -166,15 +169,13 @@ class ConsistencyChecker(Protocol):
     def check(self, forward: ForwardResult, reverse: ReverseResult, evidence: tuple[PhysicalEvidence, ...]) -> tuple[ConsistencyCheck, ...]: ...
 ```
 
-**Current implementations (all in `reasoning/baseline.py`):**
+**Current implementations:**
 
-- `BaselineForwardReasoner` — deterministic rule-based forward chain
-- `BaselineReverseReasoner` — deterministic rule-based reverse chain
-- `BaselineConsistencyChecker` — mechanism-type convergence check
+- `BaselineForwardReasoner` / `BaselineReverseReasoner` / `BaselineConsistencyChecker` — deterministic rule-based chain (`reasoning/baseline.py`)
+- `LLMForwardReasoner` / `LLMReverseReasoner` / `LLMConsistencyChecker` — LLM interprets evidence and proposes mechanisms (`reasoning/llm_reasoner.py`); supports Anthropic Claude and DeepSeek providers
 
 **Future implementations (all implement the same protocols):**
 
-- `LLMForwardReasoner` / `LLMReverseReasoner` — LLM interprets evidence, proposes mechanisms, integrates literature
 - `HybridRouter` — selects, combines, or compares baseline and LLM outputs
 - `EnsembleReasoner` — runs multiple reasoners and reconciles results
 
@@ -214,17 +215,19 @@ infrastructure error types directly.
 2. Inject through `bootstrap.py`.
 3. Core domain code never imports the concrete adapter.
 
-## LLM Provider Port (Future)
+## LLM Provider Port
 
 `reasoning/ports.py` defines the `LLMProvider` protocol, `LLMCompletion`, and
 `LLMUsage`.  LLM-powered reasoners depend on this protocol, not on specific
 vendor SDKs.  The protocol lives in `reasoning/` (not `infrastructure/`) so
-future reasoners never need to import from the infrastructure layer.
+reasoners never need to import from the infrastructure layer.
 
-Concrete implementations (Anthropic, OpenAI, local models) are infrastructure
-adapters injected through the composition root.
+**Current providers** (in `infrastructure/`):
+- `AnthropicProvider` — Anthropic Claude (via `anthropic` SDK)
+- `DeepSeekProvider` — DeepSeek V3 (via OpenAI-compatible API)
 
-**Current status:** protocol + DTOs defined; no concrete provider implemented.
+Activated by `PSF_LLM=1` + provider-specific API key environment variables.
+Falls back to the baseline reasoner when no LLM provider is configured.
 
 ## Composition Root
 
