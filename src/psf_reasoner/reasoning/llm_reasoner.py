@@ -24,6 +24,24 @@ from psf_reasoner.schemas.mechanisms import MechanismType, StructuralMechanism
 from psf_reasoner.schemas.validation import MissingEvidence, ValidationKind, ValidationStep
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _safe_evidence_type(value: str) -> EvidenceType:
+    """Parse an evidence type string from LLM output, with fallback.
+
+    LLMs may confuse ``ValidationKind`` values (e.g. ``"molecular_dynamics"``)
+    with ``EvidenceType`` values.  Unknown strings silently fall back to
+    ``EvidenceType.ENERGY_COMPONENT`` rather than crashing the pipeline.
+    """
+    try:
+        return EvidenceType(value)
+    except ValueError:
+        return EvidenceType.ENERGY_COMPONENT
+
+
+# ---------------------------------------------------------------------------
 # JSON Schemas for structured LLM output
 # ---------------------------------------------------------------------------
 
@@ -344,7 +362,7 @@ class LLMForwardReasoner:
         missing = tuple(
             MissingEvidence(
                 id=make_id("missing", "llm_forward", item["evidence_type"], context),
-                evidence_type=EvidenceType(item["evidence_type"]),
+                evidence_type=_safe_evidence_type(item["evidence_type"]),
                 reason=item["reason"],
                 impact=item["impact"],
                 related_claims=mechanism_ids,
@@ -425,7 +443,7 @@ class LLMReverseReasoner:
                 id=make_id("evidence", "required", "llm_reverse", et, context),
                 title=f"Required: {et}",
                 description=f"Reverse-predicted {et} evidence needed to test candidate mechanisms.",
-                evidence_type=EvidenceType(et),
+                evidence_type=_safe_evidence_type(et),
                 status=EvidenceStatus.REQUIRED,
                 entities=(phenotype.name,),
                 confidence=0.55,
@@ -438,7 +456,7 @@ class LLMReverseReasoner:
         missing = tuple(
             MissingEvidence(
                 id=make_id("missing", "llm_reverse", item["evidence_type"], context),
-                evidence_type=EvidenceType(item["evidence_type"]),
+                evidence_type=_safe_evidence_type(item["evidence_type"]),
                 reason=item["reason"],
                 impact=item["impact"],
                 related_claims=candidate_ids,
