@@ -14,6 +14,19 @@ from pydantic import Field
 from psf_reasoner.schemas.common import ScientificModel
 
 
+class ExpectedInteractionChange(ScientificModel):
+    """Maps a mechanism label to expected changes in interaction counts.
+
+    Bridges the gap between natural-language mechanism labels
+    (e.g. \"loss of hydrophobic packing\") and programmable comparison
+    against observed PSF/PLIP interaction deltas.
+    """
+
+    interaction_type: str  # "hydrogen_bond", "hydrophobic_contact", etc.
+    expected_direction: str  # "increase", "decrease", "unchanged"
+    confidence: float = 0.8
+
+
 class BenchmarkCase(ScientificModel):
     """A single benchmark case capturing both functional outcome and mechanism label.
 
@@ -72,6 +85,10 @@ class BenchmarkCase(ScientificModel):
     # --- Exclusion flags ---
     excluded_from_calibration: bool = False
     exclusion_reason: str | None = None
+
+    # --- Expected interaction changes (mechanism → interaction bridge) ---
+    # TODO: populate from literature/structural analysis for each case
+    expected_interaction_changes: tuple[ExpectedInteractionChange, ...] = ()
 
     # --- Split assignment (set by benchmark freeze) ---
     split: str = "development"  # "development" | "held_out"

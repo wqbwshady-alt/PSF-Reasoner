@@ -56,9 +56,9 @@ def compute_mechanism_ranking(
 ) -> MechanismRankingMetrics:
     """Evaluate mechanism ranking against a benchmark case's mechanism label.
 
-    Returns ``MechanismRankingMetrics`` with match status and MRR.
-    If the case has no mechanism label, ``mechanism_label_match`` is
-    always ``False``.
+    When ``expected_interaction_changes`` are available on the case, uses
+    observed evidence deltas for matching (replaces keyword-overlap heuristic).
+    Otherwise falls back to keyword overlap on the mechanism label.
     """
     mechanisms = report.structural_mechanisms
     if not mechanisms:
@@ -69,21 +69,33 @@ def compute_mechanism_ranking(
     top = mechanisms[0]
     label = case.mechanism_label
 
-    # Simple string overlap check for mechanism label match.
-    # This is intentionally lenient — a full semantic comparison
-    # requires expert review.
+    # Primary: match via expected interaction changes (if available)
+    if case.expected_interaction_changes:
+        match, mrr = _match_by_interaction_changes(
+            case.expected_interaction_changes,
+            report.physical_evidence,
+            mechanisms,
+        )
+        return MechanismRankingMetrics(
+            case_id=case.case_id,
+            top_mechanism_type=top.mechanism_type.value if top.mechanism_type else None,
+            top_mechanism_title=top.title,
+            mechanism_label_match=match,
+            mean_reciprocal_rank=mrr,
+            num_mechanisms=len(mechanisms),
+        )
+
+    # Fallback: keyword overlap (legacy heuristic)
     match = False
     if label and top.title:
-        # Check for keyword overlap between mechanism label and top-ranked mechanism
         label_keywords = set(label.lower().split())
         title_keywords = set(top.title.lower().split())
-        overlap = label_keywords & title_keywords
-        match = len(overlap) >= 2  # arbitrary threshold for pilot analysis
+        match = len(label_keywords & title_keywords) >= 2
 
-    # Mean Reciprocal Rank: 1/rank for the first matching mechanism
     mrr = 0.0
-    for rank, mech in enumerate(mechanisms, start=1):
-        if label and mech.title:
+    if label:
+        label_keywords = set(label.lower().split())
+        for rank, mech in enumerate(mechanisms, start=1):
             mech_words = set(mech.title.lower().split())
             if len(label_keywords & mech_words) >= 2:
                 mrr = 1.0 / rank
@@ -97,6 +109,51 @@ def compute_mechanism_ranking(
         mean_reciprocal_rank=mrr,
         num_mechanisms=len(mechanisms),
     )
+
+
+def _match_by_interaction_changes(
+    expected: tuple,
+    evidence: tuple,
+    mechanisms: tuple,
+) -> tuple[bool, float]:
+    """Match mechanism ranking using expected interaction changes.
+
+    Compares each expected change direction against observed evidence deltas.
+    Returns (top_match: bool, mean_reciprocal_rank: float).
+    """
+    # Build evidence delta map: interaction_type → direction
+    evidence_deltas: dict[str, str] = {}
+    for item in evidence:
+        if item.measurement is None:
+            continue
+        name = item.measurement.name
+        direction = item.measurement.direction.value if item.measurement.direction else "unknown"
+        # Map measurement names to interaction types
+        type_map = {
+            "hydrogen_bond_delta": "hydrogen_bond",
+            "hydrophobic_contact_delta": "hydrophobic_contact",
+            "salt_bridge_delta": "salt_bridge",
+            "pi_interaction_delta": "pi_interaction",
+            "water_bridge_delta": "water_bridge",
+        }
+        if name in type_map:
+            evidence_deltas[type_map[name]] = direction
+
+    if not evidence_deltas:
+        return False, 0.0
+
+    # Compare each expected change against evidence
+    matches = 0
+    total = len(expected)
+    for change in expected:
+        observed = evidence_deltas.get(change.interaction_type)
+        if observed and observed == change.expected_direction:
+            matches += 1
+
+    top_match = matches == total if total > 0 else False
+    mrr = matches / total if total > 0 else 0.0
+
+    return top_match, round(mrr, 3)
 
 
 def compute_calibration_analysis(
