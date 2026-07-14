@@ -19,9 +19,16 @@ class StructureFormat(StrEnum):
 
 
 class StructureInput(ScientificModel):
-    path: str = Field(min_length=1)
+    path: str | None = Field(default=None, min_length=1)
+    upload_id: str | None = Field(default=None, min_length=1, max_length=128)
     format: StructureFormat = StructureFormat.AUTO
     model_index: int = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def require_path_or_upload_id(self) -> StructureInput:
+        if self.path is None and self.upload_id is None:
+            raise ValueError("at least one of 'path' or 'upload_id' is required")
+        return self
 
 
 class LigandSpec(ScientificModel):

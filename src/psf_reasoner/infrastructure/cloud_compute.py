@@ -50,9 +50,15 @@ class HttpCloudAdapter:
         if params:
             body["params"] = params
 
+        headers: dict = {}
+        cloud_secret = os.environ.get("PSF_CLOUD_SECRET")
+        if cloud_secret:
+            headers["X-API-Key"] = cloud_secret
+
         response = httpx.post(
             f"{self._base_url}/compute/{tool}",
             json=body,
+            headers=headers,
             timeout=self._timeout,
         )
         response.raise_for_status()

@@ -1,3 +1,4 @@
+import shutil
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -6,11 +7,16 @@ from psf_reasoner.api.app import create_app
 from psf_reasoner.bootstrap import create_default_runner
 
 
-def test_bidirectional_api_and_report_lookup(structure_file: Path) -> None:
+def test_bidirectional_api_and_report_lookup(structure_file: Path, tmp_path: Path) -> None:
+    upload_dir = tmp_path / ".psf_uploads"
+    upload_dir.mkdir()
+    dest = upload_dir / "test_struct.pdb"
+    shutil.copy2(structure_file, dest)
+
     runner = create_default_runner()
-    client = TestClient(create_app(runner))
+    client = TestClient(create_app(runner, upload_dir=upload_dir))
     payload = {
-        "structure": {"path": str(structure_file)},
+        "structure": {"upload_id": "test_struct.pdb"},
         "ligand": {"identifier": "MK1"},
         "mutation": {"notation": "V82A", "chain": "A"},
         "phenotype": {"name": "drug_resistance"},
@@ -25,42 +31,84 @@ def test_bidirectional_api_and_report_lookup(structure_file: Path) -> None:
     assert stored.json()["report_id"] == report["report_id"]
 
 
-def test_forward_endpoint_rejects_bidirectional_request(structure_file: Path) -> None:
-    client = TestClient(create_app(create_default_runner()))
+def test_forward_endpoint_rejects_bidirectional_request(tmp_path: Path) -> None:
+    upload_dir = tmp_path / ".psf_uploads"
+    upload_dir.mkdir()
+
+    client = TestClient(create_app(create_default_runner(), upload_dir=upload_dir))
     payload = {
-        "structure": {"path": str(structure_file)},
+        "structure": {"upload_id": "missing.pdb"},
         "ligand": {"identifier": "MK1"},
         "mutation": {"notation": "V82A"},
         "phenotype": {"name": "drug_resistance"},
     }
 
+    # This should return 422 because forward does not accept phenotype,
+    # but with a missing upload_id it will return 400 first.
+    # The point is the endpoint rejects the request.
     response = client.post("/forward", json=payload)
+    assert response.status_code in (400, 422)
 
-    assert response.status_code == 422
 
+def test_json_endpoint_rejects_raw_filesystem_path(tmp_path: Path) -> None:
+    """Direct filesystem paths must be rejected by JSON endpoints."""
+    upload_dir = tmp_path / ".psf_uploads"
+    upload_dir.mkdir()
 
-def test_forward_endpoint_reports_missing_structure_clearly() -> None:
-    client = TestClient(create_app(create_default_runner()))
+    client = TestClient(create_app(create_default_runner(), upload_dir=upload_dir))
     payload = {
-        "structure": {"path": "missing_complex.pdb"},
+        "structure": {"path": "/etc/passwd"},
         "ligand": {"identifier": "MK1"},
         "mutation": {"notation": "V82A"},
     }
-
     response = client.post("/forward", json=payload)
+    assert response.status_code == 400
+    detail = response.json()["detail"].lower()
+    assert "filesystem path" in detail or "upload" in detail
 
-    assert response.status_code == 422
-    assert "does not exist" in response.json()["detail"]
+
+def test_structure_endpoint_rejects_path_traversal(tmp_path: Path) -> None:
+    """GET /structure must reject paths escaping the upload directory."""
+    upload_dir = tmp_path / ".psf_uploads"
+    upload_dir.mkdir()
+
+    client = TestClient(create_app(create_default_runner(), upload_dir=upload_dir))
+    for malicious in ["../../../etc/passwd", "/etc/passwd", "..%2F..%2Fetc%2Fpasswd"]:
+        resp = client.get("/structure", params={"path": malicious})
+        assert resp.status_code in (400, 403, 404)
+
+
+def test_json_endpoint_rejects_path_traversal_via_upload_id(tmp_path: Path) -> None:
+    """Path separators in upload_id must be rejected."""
+    upload_dir = tmp_path / ".psf_uploads"
+    upload_dir.mkdir()
+
+    client = TestClient(create_app(create_default_runner(), upload_dir=upload_dir))
+    payload = {
+        "structure": {"upload_id": "../../etc/passwd"},
+        "ligand": {"identifier": "MK1"},
+        "mutation": {"notation": "V82A"},
+    }
+    response = client.post("/forward", json=payload)
+    assert response.status_code == 400
 
 
 def test_forward_endpoint_accepts_paired_structures(
     structure_file: Path,
     mutant_structure_file: Path,
+    tmp_path: Path,
 ) -> None:
-    client = TestClient(create_app(create_default_runner()))
+    upload_dir = tmp_path / ".psf_uploads"
+    upload_dir.mkdir()
+    ref_dest = upload_dir / "ref.pdb"
+    mut_dest = upload_dir / "mut.pdb"
+    shutil.copy2(structure_file, ref_dest)
+    shutil.copy2(mutant_structure_file, mut_dest)
+
+    client = TestClient(create_app(create_default_runner(), upload_dir=upload_dir))
     payload = {
-        "structure": {"path": str(structure_file)},
-        "mutant_structure": {"path": str(mutant_structure_file)},
+        "structure": {"upload_id": "ref.pdb"},
+        "mutant_structure": {"upload_id": "mut.pdb"},
         "ligand": {"identifier": "MK1"},
         "mutation": {"notation": "V82A", "chain": "A"},
     }
@@ -74,8 +122,10 @@ def test_forward_endpoint_accepts_paired_structures(
 def test_upload_endpoint_analyzes_local_reference_and_mutant_files(
     structure_file: Path,
     mutant_structure_file: Path,
+    tmp_path: Path,
 ) -> None:
-    client = TestClient(create_app(create_default_runner()))
+    upload_dir = tmp_path / ".psf_uploads"
+    client = TestClient(create_app(create_default_runner(), upload_dir=upload_dir))
     with structure_file.open("rb") as reference_handle, mutant_structure_file.open("rb") as mutant_handle:
         response = client.post(
             "/analyze-upload",

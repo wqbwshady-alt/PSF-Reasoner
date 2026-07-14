@@ -403,9 +403,7 @@ def _donor_base_atoms(donor: AtomRecord, residue: ResidueRecord) -> list[AtomRec
     return [
         atom
         for atom in residue.atoms
-        if atom.element not in {"D", "H"}
-        and atom.label != donor.label
-        and _likely_bonded(donor, atom)
+        if atom.element not in {"D", "H"} and atom.label != donor.label and _likely_bonded(donor, atom)
     ]
 
 
@@ -420,9 +418,7 @@ def _estimate_hydrogen_position(donor: AtomRecord, residue: ResidueRecord) -> At
     bases = [
         atom
         for atom in residue.atoms
-        if atom.element not in {"D", "H"}
-        and atom.label != donor.label
-        and _likely_bonded(donor, atom)
+        if atom.element not in {"D", "H"} and atom.label != donor.label and _likely_bonded(donor, atom)
     ]
     if not bases or len(bases) >= 3:
         return None

@@ -53,13 +53,19 @@ function initViewer() {
   }
 }
 
-async function loadStructureData(structurePath) {
-  const response = await fetch(`/structure?path=${encodeURIComponent(structurePath)}`);
+async function loadStructureData(structurePath, uploadId) {
+  const params = new URLSearchParams();
+  if (uploadId) {
+    params.set("upload_id", uploadId);
+  } else {
+    params.set("path", structurePath);
+  }
+  const response = await fetch(`/structure?${params.toString()}`);
   if (!response.ok) throw new Error(`无法加载结构文件: ${structurePath}`);
   return response.text();
 }
 
-async function showStructure(structurePathOnServer, mutationChain, mutationResNum, ligandId) {
+async function showStructure(structurePathOnServer, mutationChain, mutationResNum, ligandId, uploadId) {
   elements.viewerPanel.classList.remove("hidden");
   initViewer();
   if (!viewer) return;
@@ -68,7 +74,7 @@ async function showStructure(structurePathOnServer, mutationChain, mutationResNu
     viewer.removeAllSurfaces();
     viewer.removeAllModels();
 
-    const pdbText = await loadStructureData(structurePathOnServer);
+    const pdbText = await loadStructureData(structurePathOnServer, uploadId);
     if (viewerMode === "reference") referenceData = pdbText;
     else mutantData = pdbText;
 
@@ -236,6 +242,8 @@ function renderReport(report) {
   const ligandId = report.request.ligand?.identifier || "";
   const refPath = report.request.structure?.path || "";
   const mutantPath = report.request.mutant_structure?.path || "";
+  const refUploadId = report.request.structure?.upload_id || "";
+  const mutantUploadId = report.request.mutant_structure?.upload_id || "";
 
   elements.report.innerHTML = `
     <div class="report-header">
@@ -253,8 +261,8 @@ function renderReport(report) {
       ${metric("SASA 变化", sasa ? number(sasa.measurement.value, "Å²") : "—", sasa ? "突变体 − 参考" : "未比较")}
     </div>
     <div class="viewer-buttons">
-      ${refPath ? `<button class="viewer-btn" data-path="${escapeHtml(refPath)}" data-type="reference" data-chain="${escapeHtml(mutationChain)}" data-resnum="${escapeHtml(mutationResNum)}" data-ligand="${escapeHtml(ligandId)}">查看参考结构 (WT)</button>` : ""}
-      ${mutantPath ? `<button class="viewer-btn" data-path="${escapeHtml(mutantPath)}" data-type="mutant" data-chain="${escapeHtml(mutationChain)}" data-resnum="${escapeHtml(mutationResNum)}" data-ligand="${escapeHtml(ligandId)}">查看突变体</button>` : ""}
+      ${refPath ? `<button class="viewer-btn" data-path="${escapeHtml(refPath)}" data-upload-id="${escapeHtml(refUploadId)}" data-type="reference" data-chain="${escapeHtml(mutationChain)}" data-resnum="${escapeHtml(mutationResNum)}" data-ligand="${escapeHtml(ligandId)}">查看参考结构 (WT)</button>` : ""}
+      ${mutantPath ? `<button class="viewer-btn" data-path="${escapeHtml(mutantPath)}" data-upload-id="${escapeHtml(mutantUploadId)}" data-type="mutant" data-chain="${escapeHtml(mutationChain)}" data-resnum="${escapeHtml(mutationResNum)}" data-ligand="${escapeHtml(ligandId)}">查看突变体</button>` : ""}
     </div>
     <section class="report-section"><h3>结构准备</h3><div class="preparation-grid">${renderPreparation(report.structure_preparation)}</div></section>
     <section class="report-section"><h3>物理证据</h3><div class="claim-list">${report.physical_evidence.map(item => claimCard(item)).join("")}</div></section>
@@ -269,6 +277,7 @@ function renderReport(report) {
   elements.report.querySelectorAll(".viewer-btn").forEach(btn => {
     btn.addEventListener("click", async () => {
       const path = btn.dataset.path;
+      const uploadId = btn.dataset.uploadId || "";
       const type = btn.dataset.type;
       const chain = btn.dataset.chain;
       const resnum = btn.dataset.resnum;
@@ -276,7 +285,7 @@ function renderReport(report) {
       switchViewerMode(type);
       try {
         setLoading(false);
-        showStructure(path, chain, resnum, ligand);
+        showStructure(path, chain, resnum, ligand, uploadId);
       } catch (e) {
         showError(`加载 3D 结构失败: ${e.message}`);
       }

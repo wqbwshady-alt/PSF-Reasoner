@@ -1,4 +1,4 @@
-"""Upload lifecycle — capping and pruning uploaded structure files."""
+"""Upload lifecycle — capping, pruning, and resolving uploaded structure files."""
 
 from __future__ import annotations
 
@@ -8,6 +8,29 @@ from pathlib import Path
 _DEFAULT_UPLOAD_DIR = Path(".psf_uploads")
 _DEFAULT_MAX_AGE_SECONDS = 86_400  # 24 hours
 _DEFAULT_MAX_COUNT = 100
+
+
+def resolve_upload(
+    upload_id: str,
+    upload_dir: Path | str = _DEFAULT_UPLOAD_DIR,
+) -> Path:
+    """Look up an uploaded structure file by its ID.
+
+    *upload_id* must be a plain filename (no path separators) that exists
+    inside *upload_dir*.  Returns the resolved ``Path``.
+
+    Raises ``FileNotFoundError`` if the file does not exist.
+    Raises ``ValueError`` if *upload_id* contains path separators.
+    """
+    if "/" in upload_id or "\\" in upload_id:
+        raise ValueError(f"upload_id must not contain path separators: {upload_id!r}")
+    directory = Path(upload_dir)
+    target = (directory / upload_id).resolve()
+    if not target.is_file():
+        raise FileNotFoundError(f"upload not found: {upload_id}")
+    if not str(target).startswith(str(directory.resolve())):
+        raise ValueError(f"upload_id resolves outside upload directory: {upload_id!r}")
+    return target
 
 
 def prune_old_uploads(
