@@ -89,3 +89,41 @@
   checks pass; one upstream TestClient deprecation warning remains.
 - Audited the workbench and measured the paired example at roughly 0.291 seconds per warm
   local run; recorded UI auditability gaps and existing upload-file accumulation.
+
+## 2026-07-13: Infrastructure, Cloud, 3D Viewer, i18n, and LLM Integration
+
+- Implemented LLM Reasoning Engine with Anthropic Claude + DeepSeek dual provider support.
+- Added 3Dmol.js protein-ligand structure viewer with WT/mutant tab switching and
+  contact residue highlighting.
+- Deployed Cloud Run service (psf-cloud-compute) with FPocket pocket detection and
+  Coulombic electrostatics (AMBER ff99 charges).
+- Built end-to-end cloud pipeline: local PDB → Cloud Run → PhysicalEvidence → LLM prompt.
+- Added SQLite persistence for reports and upload lifecycle management (age-based pruning).
+- Localized web workbench and LLM prompts/evidence interpreter to Chinese.
+- Fixed H-bond geometry: estimate H positions from donor geometry, fallback to heavy-atom
+  angle proxy for structures without explicit hydrogens.
+- Added reverse reasoning mode to web UI with mode selector (双向/正向/反向).
+- Fixed loading spinner and 3D viewer initialization bugs.
+- Final verification: 55 tests passing, ruff clean.
+
+## 2026-07-14: Audit Completion and Strategic Roadmap
+
+- Completed Phase 25 (implementation audit): verified all 16 commits from 7/13,
+  reconciled code against documented phases, identified 15 specific gaps.
+- Completed Phase 26 (gap and risk assessment): ranked gaps into 4 tiers —
+  3 critical, 4 high, 4 medium, 4 lower. Created risk matrix with likelihood,
+  impact, and mitigation for top 6 risks.
+- Completed Phase 27 (executable roadmap): defined 5 near-term sprints (2-4 weeks),
+  6 mid-term sprints (1-3 months), and 4 later-stage initiatives (3+ months),
+  each with concrete acceptance criteria, files to modify, and dependency graph.
+- Completed Phase 28 (planning handoff): updated all planning files, committed
+  to git, summarized for user.
+
+Key decisions from the roadmap:
+- Near-term priority: benchmark curation (N1) is the critical path item — it
+  unblocks confidence calibration and reasoning comparison.
+- Documentation (N3) and upload cleanup (N5) are immediate low-effort wins.
+- Scientific validation (external tool benchmarking) should precede any further
+  feature expansion.
+- Batch execution (Phase 24) is now scheduled as Sprint M6, after the scientific
+  foundation is solid.

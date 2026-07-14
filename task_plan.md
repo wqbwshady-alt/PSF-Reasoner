@@ -51,10 +51,10 @@ extended without coupling future computation modules to delivery frameworks.
 | 22. Evidence-aware PSF reasoning | complete | Mechanism and function confidence responds to measured deltas, contradictory evidence, alternatives, and evidence quality rather than fixed baseline weights. |
 | 23. Experimental validation benchmark | complete | Curated HIV-1 protease structure/affinity/resistance cases measure evidence accuracy, mechanism ranking, calibration, and failure modes. |
 | 24. Batch execution and scale boundary | pending | Multi-mutation jobs have deterministic manifests, resumable local execution, persisted reports, and measured thresholds for moving heavy work to workers/cloud. |
-| 25. Current implementation audit | in_progress | Code, tests, documentation, entry points, and scientific claims are reconciled into an evidence-backed implementation inventory. |
-| 26. Gap and risk assessment | pending | Scientific, product, engineering, and operability gaps are ranked by impact, dependency, and uncertainty. |
-| 27. Executable next-stage roadmap | pending | Near-, mid-, and later-stage work is split into concrete deliverables with acceptance criteria and recommended order. |
-| 28. Planning handoff | pending | Findings and the recommended roadmap are recorded in repository planning files and summarized for the user. |
+| 25. Current implementation audit | complete | Code, tests, documentation, entry points, and scientific claims are reconciled into an evidence-backed implementation inventory. |
+| 26. Gap and risk assessment | complete | Scientific, product, engineering, and operability gaps are ranked by impact, dependency, and uncertainty. |
+| 27. Executable next-stage roadmap | complete | Near-, mid-, and later-stage work is split into concrete deliverables with acceptance criteria and recommended order. |
+| 28. Planning handoff | complete | Findings and the recommended roadmap are recorded in repository planning files and summarized for the user. |
 
 ## Key Decisions
 
