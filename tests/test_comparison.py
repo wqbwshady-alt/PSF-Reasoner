@@ -6,6 +6,7 @@ from psf_reasoner.bootstrap import create_default_service
 from psf_reasoner.physical.comparison import ComparativeEvidenceProvider
 from psf_reasoner.physical.energy import LocalEnergyEvidenceProvider
 from psf_reasoner.physical.modeling import (
+    FoldXMutationModeler,
     LocalSideChainMutationModeler,
     MutationModelingUnavailableError,
     UnconfiguredMutationModeler,
@@ -120,3 +121,33 @@ def test_local_side_chain_modeler_builds_v82a_model(
     assert Path(result.structure.path).is_file()
     assert result.evidence.evidence_type is EvidenceType.MUTATION_MODEL
     assert result.evidence.status is EvidenceStatus.COMPUTED
+
+
+def test_foldx_modeler_falls_back_to_local_for_truncation(
+    paired_request: AnalysisRequest,
+) -> None:
+    """When FoldX is not installed, falls back to local modeler for V82A."""
+    assert paired_request.mutation is not None
+    result = FoldXMutationModeler().build(
+        paired_request.structure,
+        paired_request.mutation,
+        paired_request.ligand,
+    )
+
+    assert Path(result.structure.path).is_file()
+    assert result.evidence.evidence_type is EvidenceType.MUTATION_MODEL
+    assert result.evidence.status is EvidenceStatus.COMPUTED
+
+
+def test_foldx_modeler_raises_for_gain_of_size_when_foldx_unavailable(
+    paired_request: AnalysisRequest,
+) -> None:
+    """When FoldX is not installed and mutation is gain-of-size, should raise."""
+    # Use MutationSpec directly to ensure proper notation parsing
+    mutation = MutationSpec(notation="A82V", chain="A")
+    with pytest.raises(MutationModelingUnavailableError):
+        FoldXMutationModeler().build(
+            paired_request.structure,
+            mutation,
+            paired_request.ligand,
+        )

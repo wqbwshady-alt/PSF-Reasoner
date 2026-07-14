@@ -29,6 +29,153 @@ class MutationModelingUnavailableError(RuntimeError):
     pass
 
 
+class FoldXMutationModeler:
+    """Mutation modeler using the FoldX ``BuildModel`` command.
+
+    FoldX is a computational tool for predicting the effect of mutations on
+    protein stability and interactions.  This adapter requires FoldX to be
+    installed and available on ``PATH``.
+
+    When FoldX is not available or the mutation is a truncation case
+    (target residue is a subset of source), falls back to the local
+    side-chain truncation modeler.
+    """
+
+    def __init__(
+        self,
+        parser: StructureParser | None = None,
+        output_dir: str | None = None,
+        foldx_binary: str = "foldx",
+    ) -> None:
+        import shutil
+
+        self._parser = parser or StructureParser()
+        self._output_dir = Path(output_dir or gettempdir()) / "psf_reasoner_models"
+        self._foldx_available = shutil.which(foldx_binary) is not None
+        self._foldx_binary = foldx_binary
+        self._local = LocalSideChainMutationModeler(parser, output_dir)
+
+    def build(
+        self,
+        reference_structure: StructureInput,
+        mutation: MutationSpec,
+        ligand: LigandSpec,
+    ) -> MutationModelingResult:
+        # Try FoldX first for gain-of-size mutations
+        if self._foldx_available:
+            try:
+                return self._build_with_foldx(reference_structure, mutation, ligand)
+            except MutationModelingUnavailableError:
+                pass
+
+        # Fall back to local modeler (handles truncation cases)
+        return self._local.build(reference_structure, mutation, ligand)
+
+    def _build_with_foldx(
+        self,
+        reference_structure: StructureInput,
+        mutation: MutationSpec,
+        ligand: LigandSpec,
+    ) -> MutationModelingResult:
+        import shutil
+        import subprocess
+        import tempfile
+        from pathlib import Path as P
+
+        parsed = self._parser.parse(reference_structure)
+        mutation_code = f"{mutation.wild_type}{mutation.residue_number}{mutation.mutant};"
+
+        work_dir = P(tempfile.mkdtemp(prefix="foldx_"))
+        try:
+            # Copy input PDB to work directory (FoldX requires PDB in CWD)
+            input_pdb = work_dir / f"{P(reference_structure.path).stem}.pdb"
+            shutil.copy2(reference_structure.path, input_pdb)
+
+            # Write FoldX config
+            (work_dir / "config.cfg").write_text(
+                f"command=BuildModel\npdb={input_pdb.stem}\nmutant-file=individual_list.txt\n"
+            )
+            (work_dir / "individual_list.txt").write_text(mutation_code + "\n")
+
+            result = subprocess.run(
+                [self._foldx_binary, "-f", "config.cfg"],
+                capture_output=True,
+                text=True,
+                timeout=300,
+                cwd=str(work_dir),
+            )
+
+            if result.returncode != 0:
+                raise MutationModelingUnavailableError(
+                    f"FoldX BuildModel failed: {result.stderr[:200]}"
+                )
+
+            # Find output PDB
+            output_pdbs = list(work_dir.glob(f"{input_pdb.stem}_1.pdb"))
+            if not output_pdbs:
+                raise MutationModelingUnavailableError(
+                    "FoldX did not produce output PDB"
+                )
+
+            output_path = self._output_dir / f"{input_pdb.stem}_{mutation.notation}_foldx.pdb"
+            self._output_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(output_pdbs[0], output_path)
+
+            structure_input = StructureInput(
+                path=str(output_path),
+                format=reference_structure.format,
+                model_index=0,
+            )
+
+            fingerprint = sha256(
+                f"{reference_structure.path}|foldx|{mutation.notation}".encode()
+            ).hexdigest()[:16]
+
+            return MutationModelingResult(
+                structure=structure_input,
+                evidence=PhysicalEvidence(
+                    id=make_id("evidence", "mutation_model_foldx", mutation.notation, fingerprint),
+                    title="FoldX-generated mutant model",
+                    description=(
+                        f"Generated a mutant model for {mutation.notation} using FoldX "
+                        f"BuildModel. FoldX performs side-chain rotamer optimization "
+                        f"and local backbone relaxation."
+                    ),
+                    evidence_type=EvidenceType.MUTATION_MODEL,
+                    status=EvidenceStatus.COMPUTED,
+                    entities=(f"{mutation.chain or ''}:{mutation.residue_number}",),
+                    measurement=Measurement(
+                        name="modelled_mutation_site_count",
+                        value=1.0,
+                        unit="sites",
+                    ),
+                    confidence=0.65,
+                    provenance=(
+                        Provenance(
+                            kind=ProvenanceKind.COMPUTATION,
+                            source=f"FoldX (via {self._foldx_binary})",
+                            method="FoldX BuildModel with side-chain rotamer optimization",
+                            parameters={
+                                "mutation": mutation.notation,
+                                "output": str(output_path),
+                            },
+                        ),
+                    ),
+                    limitations=(
+                        "FoldX BuildModel performs local optimization only — "
+                        "no global backbone relaxation or MD.",
+                        "Accuracy depends on the FoldX energy function version.",
+                        "Generated model is a computational prediction, not an "
+                        "experimental structure.",
+                    ),
+                ),
+            )
+        finally:
+            import shutil as _shutil
+
+            _shutil.rmtree(work_dir, ignore_errors=True)
+
+
 @dataclass(frozen=True, slots=True)
 class MutationModelingResult:
     structure: StructureInput

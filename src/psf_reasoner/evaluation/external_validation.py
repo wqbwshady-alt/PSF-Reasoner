@@ -70,11 +70,15 @@ def run_plip_on_structure(pdb_path: Path, ligand_id: str) -> dict[str, int]:
     mol.load_pdb(str(pdb_path))
     mol.analyze()
 
-    # PLIP identifies ligands by their residue name (e.g., "MK1")
-    if ligand_id not in mol.interaction_sets:
+    # PLIP identifies ligands by "RES:CHAIN:NUM" (e.g., "MK1:B:902").
+    # Match by residue name prefix.
+    matching = [
+        v for k, v in mol.interaction_sets.items()
+        if k.split(":")[0].upper() == ligand_id.upper()
+    ]
+    if not matching:
         return {}
-
-    interactions = mol.interaction_sets[ligand_id]
+    interactions = matching[0]
 
     return {
         "hydrogen_bond": (
@@ -123,20 +127,24 @@ _SYSTEMATIC_DIFFERENCES: dict[str, str] = {
 }
 
 
-def _parse_structure_with_gemmi(pdb_path: Path):
+def _parse_structure_with_gemmi(path: Path):
     """Parse a PDB/mmCIF file into PSF-Reasoner residue records via gemmi."""
     import gemmi
 
     from psf_reasoner.physical.structure import AtomRecord, ResidueIdentity, ResidueRecord
 
-    structure = gemmi.read_structure(str(pdb_path))
+    structure = gemmi.read_structure(str(path))
     model = structure[0]
     residues = []
     for chain in model:
         for residue in chain:
+            # gemmi's make_minimal_pdb() may prepend chain ID to residue
+            # names in PDB format (3-char limit).  Use the residue name
+            # from gemmi's own data model, which is always correct.
+            res_name = residue.name
             identity = ResidueIdentity(
                 chain=chain.name,
-                name=residue.name,
+                name=res_name,
                 number=int(residue.seqid.num),
                 insertion_code=residue.seqid.icode.strip() or None,
             )
@@ -158,7 +166,7 @@ def _parse_structure_with_gemmi(pdb_path: Path):
                 ResidueRecord(
                     identity=identity,
                     one_letter_code=None,
-                    is_hetero=residue.het_flag,
+                    is_hetero=(residue.het_flag == "H"),
                     atoms=atoms,
                 )
             )
@@ -220,11 +228,34 @@ def compare_interactions(pdb_path: Path, ligand_id: str) -> InteractionCompariso
         water_bridges=total_wb,
     )
 
-    # --- PLIP ---
+    # --- PLIP (requires PDB format) ---
+    plip_counts: dict[str, int] = {}
     try:
-        plip_counts = run_plip_on_structure(pdb_path, ligand_id)
+        # PLIP only supports PDB format.  Convert CIF/mmCIF to PDB if needed.
+        suffix = pdb_path.suffix.lower()
+        if suffix in {".cif", ".mmcif"}:
+            import tempfile as _tmp
+
+            import gemmi as _gemmi
+
+            _structure = _gemmi.read_structure(str(pdb_path))
+            _pdb_text = _structure.make_minimal_pdb()
+            _lines = [l for l in _pdb_text.splitlines() if not l.startswith("ANISOU")]
+            if _lines and not _lines[-1].startswith("END"):
+                _lines.append("END")
+            with _tmp.NamedTemporaryFile(
+                suffix=".pdb", mode="w", delete=False
+            ) as _f:
+                _f.write("\n".join(_lines) + "\n")
+                _pdb_path = Path(_f.name)
+            try:
+                plip_counts = run_plip_on_structure(_pdb_path, ligand_id)
+            finally:
+                _pdb_path.unlink(missing_ok=True)
+        else:
+            plip_counts = run_plip_on_structure(pdb_path, ligand_id)
     except ImportError:
-        plip_counts = {}
+        pass
 
     # --- Compare ---
     by_type = [

@@ -61,27 +61,29 @@ determined HIV-1 protease—inhibitor complex structures.
 
 ## Results
 
-*To be filled after PLIP comparison runs.*
+**Comparison date**: 2026-07-14
+**PLIP version**: 3.0.0
+**Structure**: 1SDT (HIV-1 protease WT + indinavir/MK1, 1.30 Å)
 
 ### 1SDT (WT + MK1)
 
 | Interaction Type | PSF Count | PLIP Count | Match | Notes |
 |-----------------|-----------|------------|-------|-------|
-| hydrogen_bond | - | - | - | |
-| hydrophobic_contact | - | - | - | |
-| salt_bridge | - | - | - | |
-| pi_interaction | - | - | - | |
-| water_bridge | - | - | - | |
+| hydrogen_bond | 2 | 5 (2 pdon + 3 ldon) | No | PSF more conservative: stricter angle criteria + estimated H positions |
+| hydrophobic_contact | 41 | 12 | No | PSF counts all C/S atoms; PLIP only sp3 C with C/H neighbors |
+| salt_bridge | 0 | 2 (1 lneg + 1 pneg) | No | PSF uses 4.0A cutoff vs PLIP 5.5A; PSF charge typing may be incomplete |
+| pi_interaction | 0 | 0 | Yes | Both agree — indinavir (MK1) has no aromatic rings that trigger detection |
+| water_bridge | 7 | 5 | No | PSF over-counts as expected from distance-only method |
 
 ### Agreement Summary
 
-| Interaction Type | Agreement Rate | Notes |
-|-----------------|---------------|-------|
-| hydrogen_bond | - | |
-| hydrophobic_contact | - | |
-| salt_bridge | - | |
-| pi_interaction | - | |
-| water_bridge | - | |
+| Interaction Type | Agreement | Analysis |
+|-----------------|-----------|----------|
+| hydrogen_bond | Partial | PSF is ~40% of PLIP. Conservative — may miss real H-bonds. Consider relaxing angle threshold or improving H-position estimation. |
+| hydrophobic_contact | Low | PSF over-counts ~3.4x. PLIP definition is stricter (sp3 C only). Consider filtering by carbon hybridization. |
+| salt_bridge | Missing | PSF completely misses. Root cause: 4.0A cutoff too strict. PLIP uses 5.5A. |
+| pi_interaction | Full | Both detect 0 for this ligand. |
+| water_bridge | Good | PSF 7 vs PLIP 5. Difference expected from distance-only method. |
 
 ## Parameter Adjustments
 
