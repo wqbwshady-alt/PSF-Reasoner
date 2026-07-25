@@ -27,7 +27,7 @@ class MissingEvidence(ScientificModel):
 
 class ValidationStep(ScientificModel):
     id: str = Field(pattern=r"^validation-[a-f0-9]{12}$")
-    priority: int = Field(ge=1)
+    priority: int = Field(ge=1, le=5)
     kind: ValidationKind
     objective: str = Field(min_length=1)
     method: str = Field(min_length=1)
@@ -35,5 +35,16 @@ class ValidationStep(ScientificModel):
     addresses: tuple[str, ...] = ()
 
 
+class ValidationRoadmap(ScientificModel):
+    """Validation steps grouped by priority tier (V2 Phase 4C)."""
+
+    priority_1: tuple[ValidationStep, ...] = ()
+    priority_2: tuple[ValidationStep, ...] = ()
+    priority_3: tuple[ValidationStep, ...] = ()
+    priority_4: tuple[ValidationStep, ...] = ()
+    priority_5: tuple[ValidationStep, ...] = ()
+
+
 class ValidationPlan(ScientificModel):
     steps: tuple[ValidationStep, ...] = ()
+    roadmap: ValidationRoadmap | None = None

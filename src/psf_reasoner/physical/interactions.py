@@ -527,3 +527,102 @@ def _centroid(atoms: tuple[AtomRecord, ...]) -> tuple[float, float, float]:
 
 def _heavy_atoms(residue: ResidueRecord) -> tuple[AtomRecord, ...]:
     return tuple(atom for atom in residue.atoms if atom.element not in {"D", "H"})
+
+
+# ---------------------------------------------------------------------------
+# Cutoff Sensitivity Analysis (V2 Phase 2A)
+# ---------------------------------------------------------------------------
+
+
+def _classify_stability(counts: tuple[int, ...]) -> str:
+    """Classify a cutoff-count series as robust / threshold-sensitive / unstable."""
+    if len(counts) < 2:
+        return "robust"
+    max_val = max(counts)
+    min_val = min(counts)
+    if max_val == 0 and min_val == 0:
+        return "robust"
+    spread = (max_val - min_val) / max(1, max_val)
+    # Count how many transitions (sign changes) there are
+    transitions = sum(1 for i in range(len(counts) - 1) if counts[i] != counts[i + 1])
+    if transitions == 0:
+        return "robust"
+    if spread < 0.25:
+        return "robust"
+    if transitions <= 2 and spread < 0.5:
+        return "threshold_sensitive"
+    return "unstable"
+
+
+def cutoff_sensitivity_analysis(
+    residue: ResidueRecord,
+    ligand: ResidueRecord,
+    waters: tuple[ResidueRecord, ...],
+    *,
+    hbond_cutoffs: tuple[float, ...] = (3.0, 3.5, 4.0, 4.5, 5.0),
+    hydrophobic_cutoffs: tuple[float, ...] = (3.5, 4.0, 4.5, 5.0),
+    salt_bridge_cutoffs: tuple[float, ...] = (4.0, 4.5, 5.0, 5.5, 6.0),
+    pi_cutoffs: tuple[float, ...] = (4.5, 5.0, 5.5, 6.0),
+) -> dict[str, tuple[tuple[float, ...], tuple[int, ...]]]:
+    """Sweep cutoff parameters and return per-class (cutoff_values, counts) pairs.
+
+    Returns a dict keyed by interaction class name, each value a pair of
+    ``(cutoff_values, count_per_cutoff)`` suitable for constructing
+    ``CutoffSensitivityReport``.
+    """
+    import copy
+
+    global HYDROGEN_BOND_CUTOFF_ANGSTROM, HYDROPHOBIC_CUTOFF_ANGSTROM
+    global SALT_BRIDGE_CUTOFF_ANGSTROM, PI_CENTROID_CUTOFF_ANGSTROM
+
+    original_hbond = HYDROGEN_BOND_CUTOFF_ANGSTROM
+    original_hydrophobic = HYDROPHOBIC_CUTOFF_ANGSTROM
+    original_salt = SALT_BRIDGE_CUTOFF_ANGSTROM
+    original_pi = PI_CENTROID_CUTOFF_ANGSTROM
+
+    hbond_counts: list[int] = []
+    hydrophobic_counts: list[int] = []
+    salt_counts: list[int] = []
+    pi_counts: list[int] = []
+
+    try:
+        for cutoff in hbond_cutoffs:
+            HYDROGEN_BOND_CUTOFF_ANGSTROM = cutoff
+            # Re-run analysis for this residue-ligand pair
+            result = analyze_typed_interactions(residue, ligand, waters)
+            hbond_counts.append(
+                sum(item.interaction_type == "hydrogen_bond" for item in result.interactions)
+            )
+
+        for cutoff in hydrophobic_cutoffs:
+            HYDROPHOBIC_CUTOFF_ANGSTROM = cutoff
+            result = analyze_typed_interactions(residue, ligand, waters)
+            hydrophobic_counts.append(
+                sum(item.interaction_type == "hydrophobic_contact" for item in result.interactions)
+            )
+
+        for cutoff in salt_bridge_cutoffs:
+            SALT_BRIDGE_CUTOFF_ANGSTROM = cutoff
+            result = analyze_typed_interactions(residue, ligand, waters)
+            salt_counts.append(
+                sum(item.interaction_type == "salt_bridge" for item in result.interactions)
+            )
+
+        for cutoff in pi_cutoffs:
+            PI_CENTROID_CUTOFF_ANGSTROM = cutoff
+            result = analyze_typed_interactions(residue, ligand, waters)
+            pi_counts.append(
+                sum(item.interaction_type == "pi_interaction" for item in result.interactions)
+            )
+    finally:
+        HYDROGEN_BOND_CUTOFF_ANGSTROM = original_hbond
+        HYDROPHOBIC_CUTOFF_ANGSTROM = original_hydrophobic
+        SALT_BRIDGE_CUTOFF_ANGSTROM = original_salt
+        PI_CENTROID_CUTOFF_ANGSTROM = original_pi
+
+    return {
+        "hydrogen_bond": (hbond_cutoffs, tuple(hbond_counts)),
+        "hydrophobic_contact": (hydrophobic_cutoffs, tuple(hydrophobic_counts)),
+        "salt_bridge": (salt_bridge_cutoffs, tuple(salt_counts)),
+        "pi_interaction": (pi_cutoffs, tuple(pi_counts)),
+    }

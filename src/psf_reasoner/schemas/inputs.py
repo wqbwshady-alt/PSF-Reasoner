@@ -10,6 +10,7 @@ from pydantic import Field, model_validator
 from psf_reasoner.schemas.common import Direction, ScientificModel
 
 MUTATION_PATTERN = re.compile(r"^(?P<wild>[A-Z])(?P<number>[1-9][0-9]*)(?P<icode>[A-Z]?)(?P<mutant>[A-Z])$")
+MULTI_MUTATION_SEPARATOR = re.compile(r"[/+]")
 
 
 class StructureFormat(StrEnum):
@@ -72,6 +73,31 @@ class AnalysisMode(StrEnum):
     FORWARD = "forward"
     REVERSE = "reverse"
     BIDIRECTIONAL = "bidirectional"
+
+
+def parse_multi_mutations(notation: str) -> list[MutationSpec]:
+    """Parse a multi-mutation notation like 'V82A/I84V' or 'V82A+L90M'.
+
+    Each individual mutation is validated against MUTATION_PATTERN.
+    Returns a list of MutationSpec objects, one per mutation.
+    """
+    parts = MULTI_MUTATION_SEPARATOR.split(notation.upper().strip())
+    if len(parts) <= 1:
+        # Try as single mutation
+        match = MUTATION_PATTERN.fullmatch(notation.upper().strip())
+        if match:
+            return [MutationSpec(notation=notation.upper().strip())]
+        return []
+
+    results = []
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        match = MUTATION_PATTERN.fullmatch(part)
+        if match:
+            results.append(MutationSpec(notation=part))
+    return results if results else []
 
 
 class AnalysisRequest(ScientificModel):

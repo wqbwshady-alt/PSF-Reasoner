@@ -1,0 +1,22 @@
+{
+  "A_all_30": {
+    "n": 30,
+    "accuracy": 0.9,
+    "balanced_accuracy": 0.786,
+    "mcc": 0.711,
+    "n_errors": 3,
+    "label_dist": "23decrease/7increase"
+  },
+  "B_struct_20": {
+    "n": 20,
+    "accuracy": 1.0,
+    "balanced_accuracy": 1.0,
+    "mcc": 1.0,
+    "n_errors": 0,
+    "label_dist": "15decrease/5increase"
+  },
+  "C_contact_8": {
+    "n": 0,
+    "error": "too few samples"
+  }
+}

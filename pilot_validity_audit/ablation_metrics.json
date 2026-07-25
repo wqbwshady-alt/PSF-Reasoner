@@ -1,0 +1,58 @@
+[
+  {
+    "model": "M0_chemistry",
+    "n_features": 7,
+    "accuracy": 0.767,
+    "balanced_accuracy": 0.5,
+    "mcc": 0.0,
+    "n_errors": 7
+  },
+  {
+    "model": "M1_structure",
+    "n_features": 9,
+    "accuracy": 0.6,
+    "balanced_accuracy": 0.59,
+    "mcc": 0.154,
+    "n_errors": 12
+  },
+  {
+    "model": "M2_literature",
+    "n_features": 3,
+    "accuracy": 0.767,
+    "balanced_accuracy": 0.5,
+    "mcc": 0.0,
+    "n_errors": 7
+  },
+  {
+    "model": "M3_chem+struct",
+    "n_features": 16,
+    "accuracy": 0.6,
+    "balanced_accuracy": 0.59,
+    "mcc": 0.154,
+    "n_errors": 12
+  },
+  {
+    "model": "M4_chem+lit",
+    "n_features": 10,
+    "accuracy": 0.767,
+    "balanced_accuracy": 0.5,
+    "mcc": 0.0,
+    "n_errors": 7
+  },
+  {
+    "model": "M5_struct+lit",
+    "n_features": 12,
+    "accuracy": 0.867,
+    "balanced_accuracy": 0.764,
+    "mcc": 0.599,
+    "n_errors": 4
+  },
+  {
+    "model": "M6_all",
+    "n_features": 23,
+    "accuracy": 0.9,
+    "balanced_accuracy": 0.786,
+    "mcc": 0.711,
+    "n_errors": 3
+  }
+]

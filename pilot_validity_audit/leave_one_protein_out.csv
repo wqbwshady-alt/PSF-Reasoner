@@ -1,0 +1,16 @@
+model,test_protein,n_test,accuracy,balanced_accuracy,mcc
+majority,P00374,5,1.0,0.5,0.0
+majority,P00519,5,1.0,0.5,0.0
+majority,P00533,5,0.6,0.5,0.0
+majority,P03367,10,1.0,0.5,0.0
+majority,P62593,5,0.0,0.0,0.0
+heuristic,P00374,5,1.0,0.5,0.0
+heuristic,P00519,5,1.0,0.5,0.0
+heuristic,P00533,5,0.6,0.5,0.0
+heuristic,P03367,10,1.0,0.5,0.0
+heuristic,P62593,5,0.0,0.0,0.0
+logistic_regression,P00374,5,0.0,0.0,0.0
+logistic_regression,P00519,5,0.0,0.0,0.0
+logistic_regression,P00533,5,0.6,0.5,0.0
+logistic_regression,P03367,10,0.1,0.05,0.0
+logistic_regression,P62593,5,0.0,0.0,0.0

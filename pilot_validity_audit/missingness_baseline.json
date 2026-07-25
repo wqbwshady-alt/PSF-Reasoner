@@ -1,0 +1,8 @@
+{
+  "accuracy": 0.767,
+  "mcc": 0.0,
+  "has_structure_correlation_with_label": -0.05,
+  "decrease_rate_with_structure": 0.75,
+  "decrease_rate_without_structure": 0.8,
+  "conclusion": "Missingness NOT independently predictive"
+}

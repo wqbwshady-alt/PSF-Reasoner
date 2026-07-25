@@ -1,114 +1,150 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>PSF-Reasoner 蛋白质分析工作台</title>
-    <link rel="stylesheet" href="/client/styles.css" />
-    <script src="https://3Dmol.org/build/3Dmol-min.js"></script>
-  </head>
-  <body>
-    <header class="topbar">
-      <div class="brand">PSF-Reasoner <span>本地工作台</span></div>
-      <div class="status" id="api-status">检测服务中</div>
-    </header>
-    <main class="layout">
-      <section class="control-panel" aria-label="分析输入">
-        <div class="panel-heading">
-          <p class="eyebrow">蛋白质-配体分析</p>
-          <h1>物理 · 结构 · 功能</h1>
-        </div>
-        <button class="example-button" id="run-example" type="button">双向示例 HIV-1 V82A</button>
-        <button class="example-button" id="run-reverse-example" type="button" style="margin-top:6px">反向示例 耐药性推理</button>
-        <div class="divider"><span>或自定义分析参数</span></div>
-        <form id="analysis-form">
-          <div class="mode-selector" id="mode-selector">
-            <label class="mode-option active" data-mode="bidirectional">
-              <input type="radio" name="analysis-mode" value="bidirectional" checked /> 双向 P⇄F
-            </label>
-            <label class="mode-option" data-mode="forward">
-              <input type="radio" name="analysis-mode" value="forward" /> 正向 P→F
-            </label>
-            <label class="mode-option" data-mode="reverse">
-              <input type="radio" name="analysis-mode" value="reverse" /> 反向 F→P
-            </label>
-          </div>
-          <label class="file-field">
-            <span>参考结构 (野生型)</span>
-            <input id="reference-file" name="reference_file" type="file" accept=".pdb,.cif,.mmcif" />
-          </label>
-          <label class="file-field" id="mutant-file-group">
-            <span>突变体结构 <em>可选</em></span>
-            <input id="mutant-file" name="mutant_file" type="file" accept=".pdb,.cif,.mmcif" />
-          </label>
-          <div class="field-grid" id="mutation-fields">
-            <label>
-              <span>配体</span>
-              <input id="ligand" name="ligand" value="MK1" autocomplete="off" />
-            </label>
-            <label>
-              <span>突变</span>
-              <input id="mutation" name="mutation" value="V82A" autocomplete="off" />
-            </label>
-          </div>
-          <div class="field-grid">
-            <label id="chain-group">
-              <span>蛋白链</span>
-              <input id="chain" name="chain" value="A" autocomplete="off" />
-            </label>
-            <label id="phenotype-group">
-              <span>表型</span>
-              <select id="phenotype" name="phenotype">
-                <option value="drug_resistance">耐药性</option>
-                <option value="activity_loss">活性丧失</option>
-                <option value="stability_change">稳定性变化</option>
-              </select>
-            </label>
-          </div>
-          <button class="primary-button" id="submit-analysis" type="submit">开始分析</button>
-        </form>
-        <p class="local-note">文件仅在本地处理，不会上传到外部服务器。</p>
-      </section>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PSF-Reasoner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/client/styles.css?v=v4c" />
+<script src="https://3Dmol.org/build/3Dmol-min.js"></script>
+</head>
+<body>
 
-      <section class="results-panel" aria-live="polite">
-        <div class="empty-state" id="empty-state">
-          <p class="eyebrow">准备就绪</p>
-          <h2>运行示例或选择本地结构文件开始分析。</h2>
-          <p>计算证据、结构机制、功能假设、验证步骤以及交互式 3D 结构视图将在此展示。</p>
-        </div>
-        <div class="loading-state hidden" id="loading-state">
-          <div class="spinner" aria-hidden="true"></div>
-          <p>正在分析结构</p>
-        </div>
-        <div class="error-state hidden" id="error-state"></div>
-        <div class="report hidden" id="report"></div>
-      </section>
-    </main>
+<!-- Navigation -->
+<nav class="nav">
+  <div class="nav-brand">
+    <span class="nav-logo">PSF</span>
+    <span class="nav-title">Reasoner</span>
+  </div>
+  <div class="nav-status" id="api-status">● 就绪</div>
+</nav>
 
-    <div class="viewer-panel hidden" id="viewer-panel">
-      <div class="viewer-toolbar">
-        <span class="viewer-title">3D 结构视图</span>
-        <div class="viewer-tabs">
-          <button class="viewer-tab active" data-mode="reference">参考结构 (WT)</button>
-          <button class="viewer-tab" data-mode="mutant">突变体</button>
-        </div>
-        <button class="viewer-close" id="viewer-close" title="关闭">&times;</button>
+<!-- Layout -->
+<div class="app">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <h2>分析模式</h2>
+      <div class="mode-tabs" id="mode-selector">
+        <button class="mode-tab active" data-mode="bidirectional">双向 P⇄F</button>
+        <button class="mode-tab" data-mode="forward">正向 P→F</button>
+        <button class="mode-tab" data-mode="reverse">反向 F→P</button>
       </div>
-      <div class="viewer-legend" id="viewer-legend">
-        <span class="legend-item"><span class="legend-swatch" style="background:#4ecdc4"></span> 配体</span>
-        <span class="legend-item"><span class="legend-swatch" style="background:#ff6b6b"></span> 突变位点</span>
-        <span class="legend-item"><span class="legend-swatch" style="background:#ffe66d"></span> 接触残基</span>
-      </div>
-      <div class="viewer-container" id="viewer-3d"></div>
     </div>
 
-    <template id="metric-template">
-      <article class="metric">
-        <span class="metric-label"></span>
-        <strong class="metric-value"></strong>
-        <small class="metric-detail"></small>
-      </article>
-    </template>
-    <script src="/client/app.js"></script>
-  </body>
+    <div class="sidebar-section">
+      <h2>结构文件</h2>
+      <label class="file-input">
+        <span>参考结构 (WT)</span>
+        <input id="reference-file" type="file" accept=".pdb,.cif,.mmcif" />
+      </label>
+      <label class="file-input" id="mutant-file-group">
+        <span>突变体结构</span>
+        <input id="mutant-file" type="file" accept=".pdb,.cif,.mmcif" />
+      </label>
+    </div>
+
+    <div class="sidebar-section" id="mutation-fields">
+      <h2>分析参数</h2>
+      <label class="field">
+        <span>配体 ID</span>
+        <input id="ligand" value="MK1" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>突变</span>
+        <input id="mutation" value="V82A" autocomplete="off" />
+      </label>
+      <label class="field" id="chain-group">
+        <span>链</span>
+        <input id="chain" value="A" autocomplete="off" />
+      </label>
+      <label class="field" id="phenotype-group">
+        <span>表型</span>
+        <select id="phenotype">
+          <option value="drug_resistance">耐药性</option>
+          <option value="activity_loss">活性丧失</option>
+          <option value="stability_change">稳定性变化</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="sidebar-actions">
+      <button class="btn-primary" id="submit-analysis">开始分析</button>
+      <button class="btn-ghost" id="run-example">V82A 示例</button>
+      <button class="btn-ghost" id="run-v3-example" style="font-family:monospace;font-size:0.75rem">V3 因果推理</button>
+    </div>
+    <p class="sidebar-note">文件仅在本地处理</p>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <!-- Loading -->
+    <div class="loading-state hidden" id="loading-state">
+      <div class="bio-loader">
+        <div class="bio-dna">
+          <div class="dna-strand dna-s1"></div>
+          <div class="dna-strand dna-s2"></div>
+          <div class="dna-rung" style="--i:1"></div><div class="dna-rung" style="--i:2"></div>
+          <div class="dna-rung" style="--i:3"></div><div class="dna-rung" style="--i:4"></div>
+          <div class="dna-rung" style="--i:5"></div><div class="dna-rung" style="--i:6"></div>
+          <div class="dna-rung" style="--i:7"></div><div class="dna-rung" style="--i:8"></div>
+        </div>
+        <div class="bio-particles">
+          <span class="bp" style="--x:20%;--d:3s;--s:4px"></span>
+          <span class="bp" style="--x:50%;--d:4s;--s:3px"></span>
+          <span class="bp" style="--x:75%;--d:3.5s;--s:5px"></span>
+          <span class="bp" style="--x:35%;--d:4.5s;--s:3px"></span>
+          <span class="bp" style="--x:65%;--d:3.2s;--s:4px"></span>
+        </div>
+        <div class="bio-ring">
+          <div class="ring-orbit r1"></div><div class="ring-orbit r2"></div><div class="ring-orbit r3"></div>
+          <div class="ring-core"></div>
+        </div>
+        <p class="bio-status" id="bio-status">初始化分析引擎</p>
+        <div class="bio-progress"><div class="bio-progress-bar" id="bio-progress-bar"></div></div>
+        <div class="bio-stages">
+          <span class="bio-stage" data-stage="parse">📖 结构解析</span>
+          <span class="bio-stage" data-stage="qc">🔬 质量评估</span>
+          <span class="bio-stage" data-stage="physical">⚛️ 物理证据</span>
+          <span class="bio-stage" data-stage="reason">🧬 机制推理</span>
+          <span class="bio-stage" data-stage="synthesize">🧪 报告合成</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Empty -->
+    <div class="empty-state" id="empty-state">
+      <div class="empty-icon">🧬</div>
+      <h1>蛋白质结构机制推理平台</h1>
+      <p>上传野生型和突变体结构文件，或点击示例按钮开始分析。<br/>支持单点突变的物理证据计算、机制推理与因果图生成。</p>
+      <div class="empty-cards">
+        <div class="empty-card"><strong>任意蛋白</strong><span>PDB / mmCIF 格式</span></div>
+        <div class="empty-card"><strong>12 类证据</strong><span>距离 · 接触 · SASA · 氢键 · 疏水 · 盐桥 · π · 水桥</span></div>
+        <div class="empty-card"><strong>因果推理</strong><span>竞争机制图 · 文献证据 · 校准预测</span></div>
+      </div>
+    </div>
+
+    <!-- Error -->
+    <div class="error-state hidden" id="error-state"></div>
+
+    <!-- Report -->
+    <div class="report hidden" id="report"></div>
+  </main>
+</div>
+
+<!-- 3D Viewer -->
+<div class="viewer-panel hidden" id="viewer-panel">
+  <div class="viewer-toolbar">
+    <span class="viewer-title">3D 结构</span>
+    <button class="viewer-tab active" data-mode="reference">WT</button>
+    <button class="viewer-tab" data-mode="mutant">Mutant</button>
+    <button class="viewer-close" id="viewer-close">&times;</button>
+  </div>
+  <div class="viewer-container" id="viewer-3d"></div>
+</div>
+
+<script src="/client/app.js?v=v4g"></script>
+</body>
 </html>

@@ -50,21 +50,21 @@ def test_forward_endpoint_rejects_bidirectional_request(tmp_path: Path) -> None:
     assert response.status_code in (400, 422)
 
 
-def test_json_endpoint_rejects_raw_filesystem_path(tmp_path: Path) -> None:
-    """Direct filesystem paths must be rejected by JSON endpoints."""
+def test_json_endpoint_rejects_missing_file_path(tmp_path: Path) -> None:
+    """Non-existent file paths must be rejected by JSON endpoints."""
     upload_dir = tmp_path / ".psf_uploads"
     upload_dir.mkdir()
 
     client = TestClient(create_app(create_default_runner(), upload_dir=upload_dir))
     payload = {
-        "structure": {"path": "/etc/passwd"},
+        "structure": {"path": "/nonexistent/path/structure.cif"},
         "ligand": {"identifier": "MK1"},
         "mutation": {"notation": "V82A"},
     }
     response = client.post("/forward", json=payload)
     assert response.status_code == 400
     detail = response.json()["detail"].lower()
-    assert "filesystem path" in detail or "upload" in detail
+    assert "not found" in detail or "upload" in detail
 
 
 def test_structure_endpoint_rejects_path_traversal(tmp_path: Path) -> None:

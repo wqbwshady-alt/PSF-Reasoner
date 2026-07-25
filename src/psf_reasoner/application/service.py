@@ -18,9 +18,11 @@ from psf_reasoner.physical.modeling import (
     MutationModelingUnavailableError,
 )
 from psf_reasoner.physical.preparation import StructurePreparationInspector
+from psf_reasoner.physical.structure_qc import StructureQCProvider
 from psf_reasoner.reasoning.protocols import ConsistencyChecker, ForwardReasoner, ReverseReasoner
-from psf_reasoner.schemas.common import Claim
+from psf_reasoner.schemas.common import CalibrationStatus, Claim
 from psf_reasoner.schemas.inputs import AnalysisRequest
+from psf_reasoner.schemas.preparation import QCGrade
 from psf_reasoner.schemas.report import PSFReport
 from psf_reasoner.schemas.validation import MissingEvidence, ValidationPlan, ValidationStep
 
@@ -34,6 +36,7 @@ class AnalysisService:
         consistency_checker: ConsistencyChecker,
         preparation_inspector: StructurePreparationInspector | None = None,
         mutation_modeler: MutationModeler | None = None,
+        structure_qc: StructureQCProvider | None = None,
     ) -> None:
         self._evidence_provider = evidence_provider
         self._forward_reasoner = forward_reasoner
@@ -41,14 +44,36 @@ class AnalysisService:
         self._consistency_checker = consistency_checker
         self._preparation_inspector = preparation_inspector or StructurePreparationInspector()
         self._mutation_modeler = mutation_modeler
+        self._structure_qc = structure_qc or StructureQCProvider()
 
     def analyze(self, request: AnalysisRequest) -> PSFReport:
         effective_request, model_evidence = self._effective_request(request)
         preparation = self._preparation_inspector.inspect_request(effective_request)
+
+        # -- Structure Pair QC (V2 Phase 1A) --------------------------------
+        qc_report = None
+        qc_confidence_factor = 1.0
+        if effective_request.mutant_structure is not None:
+            qc_report = self._structure_qc.assess(effective_request)
+            if qc_report.grade is QCGrade.POORLY_COMPARABLE:
+                qc_confidence_factor = 0.70
+            elif qc_report.grade is QCGrade.PARTIALLY_COMPARABLE:
+                qc_confidence_factor = 0.90
+        # --------------------------------------------------------------------
+
         physical = (*model_evidence, *self._evidence_provider.collect(effective_request))
         forward = self._forward_reasoner.reason(effective_request, physical)
         reverse = self._reverse_reasoner.reason(effective_request, physical)
         checks = self._consistency_checker.check(forward, reverse, physical)
+
+        # Apply QC confidence factor to all scored claims
+        if qc_confidence_factor < 1.0:
+            forward = self._apply_qc_discount(forward, qc_confidence_factor)
+            reverse = self._apply_qc_discount(reverse, qc_confidence_factor)
+            checks = tuple(
+                check.model_copy(update={"confidence": round(check.confidence * qc_confidence_factor, 3)})
+                for check in checks
+            )
 
         all_evidence = _unique_by_id((*physical, *reverse.required_evidence))
         mechanisms = _unique_by_id((*forward.mechanisms, *reverse.mechanisms))
@@ -97,6 +122,7 @@ class AnalysisService:
             mode=request.mode,
             request=request,
             structure_preparation=preparation,
+            structure_qc=qc_report,
             physical_evidence=all_evidence,
             structural_mechanisms=mechanisms,
             functional_hypotheses=hypotheses,
@@ -105,11 +131,16 @@ class AnalysisService:
             missing_evidence=missing,
             validation_plan=ValidationPlan(steps=steps),
             confidence=confidence,
+            calibration_status=CalibrationStatus.HEURISTIC,
             limitations=(
+                "[LEGACY HEURISTIC ENGINE] All confidence values are uncalibrated heuristic "
+                "weights (e.g. +0.06 per evidence match).  Qualitative labels "
+                "(Strong/Moderate/Weak/Insufficient) are derived from these uncalibrated "
+                "scores and must not be interpreted as probabilities.  See V3 roadmap "
+                "for planned calibration against experimental ΔΔG / Ki data.",
                 "Baseline structural mechanisms remain qualitative; coordinate evidence describes "
                 "only the supplied reference and mutant structures.",
                 "Required evidence denotes predictions to test, not completed calculations.",
-                "Confidence values are heuristic and are not calibrated probabilities.",
             ),
         )
 
@@ -124,6 +155,39 @@ class AnalysisService:
         except MutationModelingUnavailableError:
             return request, ()
         return request.model_copy(update={"mutant_structure": result.structure}), (result.evidence,)
+
+    @staticmethod
+    def _apply_qc_discount(result, factor: float):
+        """Apply confidence discount from Structure Pair QC to result claims."""
+        from psf_reasoner.reasoning.results import ForwardResult, ReverseResult
+
+        if isinstance(result, ForwardResult):
+            return ForwardResult(
+                mechanisms=tuple(
+                    m.model_copy(update={"confidence": round(m.confidence * factor, 3)})
+                    for m in result.mechanisms
+                ),
+                hypotheses=tuple(
+                    h.model_copy(update={"confidence": round(h.confidence * factor, 3)})
+                    for h in result.hypotheses
+                ),
+                missing_evidence=result.missing_evidence,
+                validation_steps=result.validation_steps,
+            )
+        else:
+            return ReverseResult(
+                mechanisms=tuple(
+                    m.model_copy(update={"confidence": round(m.confidence * factor, 3)})
+                    for m in result.mechanisms
+                ),
+                candidates=tuple(
+                    c.model_copy(update={"confidence": round(c.confidence * factor, 3)})
+                    for c in result.candidates
+                ),
+                required_evidence=result.required_evidence,
+                missing_evidence=result.missing_evidence,
+                validation_steps=result.validation_steps,
+            )
 
 
 def _unique_by_id[T: Claim | MissingEvidence | ValidationStep](items: tuple[T, ...]) -> tuple[T, ...]:

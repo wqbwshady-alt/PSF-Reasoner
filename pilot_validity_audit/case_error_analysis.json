@@ -1,0 +1,101 @@
+[
+  {
+    "sample_id": "BLAC_E104A_PEN",
+    "protein_group": "P62593",
+    "true_label": "increase",
+    "predicted_probability": 0.643,
+    "has_structure": true,
+    "has_contacts": false,
+    "top_features": [
+      {
+        "name": "nearest_ligand_distance",
+        "contribution": 1.414
+      },
+      {
+        "name": "ligand_heavy_atoms",
+        "contribution": 1.1244
+      },
+      {
+        "name": "ligand_hbond_acceptors",
+        "contribution": -1.1174
+      },
+      {
+        "name": "neighborhood_4a_count",
+        "contribution": -0.8996
+      },
+      {
+        "name": "ligand_hbond_donors",
+        "contribution": -0.1884
+      }
+    ],
+    "nearest_ligand_distance": 9.726,
+    "contact_delta": 0,
+    "likely_failure": "No literature evidence \u2014 relying on weak structural signal"
+  },
+  {
+    "sample_id": "EGFR_L858R_IRE",
+    "protein_group": "P00533",
+    "true_label": "increase",
+    "predicted_probability": 0.852,
+    "has_structure": false,
+    "has_contacts": false,
+    "top_features": [
+      {
+        "name": "strong_evidence_count",
+        "contribution": 1.2948
+      },
+      {
+        "name": "any_literature",
+        "contribution": 0.1439
+      },
+      {
+        "name": "direct_evidence_count",
+        "contribution": 0.0529
+      },
+      {
+        "name": "volume_delta",
+        "contribution": 0.0
+      },
+      {
+        "name": "polarity_added",
+        "contribution": 0.0
+      }
+    ],
+    "nearest_ligand_distance": 0.0,
+    "contact_delta": 0,
+    "likely_failure": "No structure features \u2014 predicting from protein group prior only"
+  },
+  {
+    "sample_id": "EGFR_G719S_IRE",
+    "protein_group": "P00533",
+    "true_label": "increase",
+    "predicted_probability": 0.852,
+    "has_structure": false,
+    "has_contacts": false,
+    "top_features": [
+      {
+        "name": "strong_evidence_count",
+        "contribution": 1.2948
+      },
+      {
+        "name": "any_literature",
+        "contribution": 0.1439
+      },
+      {
+        "name": "direct_evidence_count",
+        "contribution": 0.0529
+      },
+      {
+        "name": "volume_delta",
+        "contribution": 0.0
+      },
+      {
+        "name": "polarity_added",
+        "contribution": 0.0
+      }
+    ],
+    "nearest_ligand_distance": 0.0,
+    "contact_delta": 0,
+    "likely_failure": "No structure features \u2014 predicting from protein group prior only"
+  }
+]

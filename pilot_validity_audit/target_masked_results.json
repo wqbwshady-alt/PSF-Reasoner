@@ -1,0 +1,16 @@
+{
+  "full_model": {
+    "accuracy": 0.9,
+    "mcc": 0.711
+  },
+  "literature_masked": {
+    "accuracy": 0.8,
+    "mcc": 0.441
+  },
+  "literature_only": {
+    "accuracy": 0.767,
+    "mcc": 0.0
+  },
+  "mcc_drop_on_mask": 0.27,
+  "conclusion": "Mixed \u2014 investigate per-fold."
+}

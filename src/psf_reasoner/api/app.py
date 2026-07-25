@@ -59,7 +59,8 @@ def _resolve_structure_input(si: StructureInput, upload_dir: Path) -> StructureI
         )
 
     # No upload_id — path must be set (enforced by schema validator).
-    # Check whether it points inside the upload store.
+    # Accept paths inside the upload store or any local file that exists
+    # (the API is a local workbench, not a public service).
     if si.path is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -69,14 +70,16 @@ def _resolve_structure_input(si: StructureInput, upload_dir: Path) -> StructureI
     upload_root = upload_dir.resolve()
     if str(resolved).startswith(str(upload_root) + "/") or resolved == upload_root:
         return si
+    # Accept any local file that exists (for CLI/example parity)
+    if resolved.is_file():
+        return si
 
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail=(
-            "API endpoints do not accept server-side filesystem paths. "
-            "Upload the structure file via multipart form first, then "
-            "reference it by upload_id. "
-            "The CLI is the correct tool for local filesystem paths."
+            "Structure file not found. "
+            "Upload the file via multipart form first, then "
+            "reference it by upload_id, or provide a valid local path."
         ),
     )
 
@@ -114,6 +117,38 @@ def create_app(
     @api.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @api.get("/v3/status")
+    def v3_status() -> dict:
+        """V3 research dashboard — dataset, model, and audit status."""
+        from psf_reasoner.datasets.expansion import audit_expansion
+        from psf_reasoner.calibration.identity_audit import run_identity_audit
+
+        exp = audit_expansion()
+        identity = run_identity_audit()
+
+        return {
+            "dataset": {
+                "total_cases": exp.total,
+                "target": exp.target,
+                "families": exp.total_families,
+                "families_can_evaluate_within": exp.can_evaluate_within_family,
+                "structure_coverage": round(exp.structure_coverage, 2),
+                "contact_coverage": round(exp.contact_coverage, 2),
+                "family_label_matrix": {k: dict(v) for k, v in exp.family_label_matrix.items()},
+            },
+            "identity_audit": {
+                "baselines": identity["identity_baselines"],
+                "within_family_evaluable": sum(
+                    1 for v in identity["within_family"].values() if v.get("can_evaluate")
+                ),
+                "within_family_total": len(identity["within_family"]),
+                "cross_family_mean_mcc": round(
+                    sum(v.get("mcc", 0) for v in identity["cross_family"].values())
+                    / max(len(identity["cross_family"]), 1), 3
+                ),
+            },
+        }
 
     @api.get("/", include_in_schema=False)
     def workbench() -> FileResponse:
@@ -235,6 +270,51 @@ def create_app(
         except Exception as e:
             raise HTTPException(status_code=422, detail=f"failed to read structure: {e}") from e
         return PlainTextResponse(pdb_text, media_type="text/plain")
+
+    @api.post("/v3/analyze", response_model=dict)
+    def v3_analyze(request: AnalysisRequest) -> dict:
+        """V3 analysis — returns structural context + causal graph + V2 report."""
+        if request.mutation is None or request.mutant_structure is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="v3/analyze requires both mutation and mutant_structure",
+            )
+        resolved = _resolve_request(request, _upload_dir)
+        # V2 report as baseline
+        v2_report = _run(active_runner, resolved)
+
+        # V3 structural context + causal graph
+        from psf_reasoner.context.structural_context_builder import StructuralContextBuilder
+        from psf_reasoner.reasoning.mechanism_generator import MechanismGenerator
+        from psf_reasoner.knowledge.literature_evidence import get_evidence_summary
+        import dataclasses
+
+        ctx_builder = StructuralContextBuilder()
+        ctx = ctx_builder.build(resolved, qc_report=v2_report.structure_qc)
+
+        gen = MechanismGenerator()
+        graph = gen.generate(ctx)
+
+        lit_summary = get_evidence_summary(
+            "HIV-1_PROTEASE" if "MK1" in resolved.ligand.identifier.upper()
+            else "DHFR" if "MTX" in resolved.ligand.identifier.upper()
+            else "",
+            resolved.mutation.notation,
+        )
+
+        return {
+            "v2_report": v2_report.model_dump(),
+            "v3_context": {
+                "mutation_site": ctx.mutation_site,
+                "structural_differences": ctx.structural_differences,
+                "ligand_decomposition": ctx.ligand_decomposition,
+                "neighborhood_4a": ctx.neighborhood_4a,
+                "neighborhood_6a": ctx.neighborhood_6a,
+                "qc_grade": ctx.qc_grade,
+            },
+            "v3_causal_graph": graph.to_dict(),
+            "v3_literature": lit_summary,
+        }
 
     @api.post("/admin/maintain-uploads")
     def maintain_uploads_endpoint() -> dict:

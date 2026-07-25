@@ -39,8 +39,25 @@ class Measurement(ScientificModel):
     reference_value: float | None = None
 
 
+class InteractionDetail(ScientificModel):
+    """Atom-level interaction provenance (V2 Phase 2D).
+
+    One detail per individual protein-ligand interaction event,
+    making the evidence fully traceable.
+    """
+
+    interaction_type: str = Field(min_length=1)
+    protein_atom: str = Field(min_length=1)
+    ligand_atom: str = Field(min_length=1)
+    distance_angstrom: float = Field(ge=0.0)
+    geometry: str = Field(default="")
+    confidence: float = Field(ge=0.0, le=1.0)
+    mediator: str | None = None
+
+
 class PhysicalEvidence(Claim):
     evidence_type: EvidenceType
     status: EvidenceStatus
     entities: tuple[str, ...] = ()
     measurement: Measurement | None = None
+    interaction_details: tuple[InteractionDetail, ...] = ()

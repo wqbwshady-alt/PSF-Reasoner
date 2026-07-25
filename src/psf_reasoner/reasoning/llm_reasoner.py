@@ -374,7 +374,7 @@ class LLMForwardReasoner:
         steps = tuple(
             ValidationStep(
                 id=make_id("validation", "llm_forward", str(item["priority"]), context),
-                priority=item["priority"],
+                priority=max(1, min(5, item["priority"])),
                 kind=ValidationKind(item["kind"]),
                 objective=item["objective"],
                 method=item["method"],
@@ -468,7 +468,7 @@ class LLMReverseReasoner:
         steps = tuple(
             ValidationStep(
                 id=make_id("validation", "llm_reverse", str(item["priority"]), context),
-                priority=item["priority"],
+                priority=max(1, min(5, item["priority"])),
                 kind=ValidationKind(item["kind"]),
                 objective=item["objective"],
                 method=item["method"],

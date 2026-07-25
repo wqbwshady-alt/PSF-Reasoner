@@ -2,18 +2,33 @@
 
 from psf_reasoner.identifiers import make_id
 from psf_reasoner.reasoning.results import ForwardResult, ReverseResult
-from psf_reasoner.schemas.common import Direction, Provenance, ProvenanceKind
-from psf_reasoner.schemas.consistency import ConsistencyCheck, ConsistencyStatus
+from psf_reasoner.schemas.common import (
+    CalibrationStatus,
+    Direction,
+    Provenance,
+    ProvenanceKind,
+    QualitativeConfidence,
+    ScoreBreakdown,
+    ScoreType,
+)
+from psf_reasoner.schemas.consistency import AgreementDetail, ConsistencyCheck, ConsistencyStatus
 from psf_reasoner.schemas.evidence import (
     EvidenceStatus,
     EvidenceType,
     Measurement,
     PhysicalEvidence,
 )
-from psf_reasoner.schemas.function import FunctionalHypothesis, FunctionType, ReverseCandidate
+from psf_reasoner.schemas.function import FunctionalHypothesis, FunctionType, ReverseCandidate, SupportCoverage
 from psf_reasoner.schemas.inputs import AnalysisRequest
-from psf_reasoner.schemas.mechanisms import MechanismType, StructuralMechanism
-from psf_reasoner.schemas.validation import MissingEvidence, ValidationKind, ValidationStep
+from psf_reasoner.schemas.mechanisms import (
+    EvidenceGraph,
+    EvidenceNode,
+    MechanismCategory,
+    MechanismType,
+    MissingEvidenceNode,
+    StructuralMechanism,
+)
+from psf_reasoner.schemas.validation import MissingEvidence, ValidationKind, ValidationRoadmap, ValidationStep
 
 
 def _rule_provenance(rule: str) -> tuple[Provenance, ...]:
@@ -72,6 +87,7 @@ class BaselineForwardReasoner:
         )
         packing_direction = Direction.DECREASE if size_direction == Direction.DECREASE else Direction.CHANGE
         packing_score = _evidence_support_score(evidence, MechanismType.POCKET_PACKING)
+        packing_confidence = _bounded((0.63 if size_direction == Direction.DECREASE else 0.47) + packing_score)
         mechanism = StructuralMechanism(
             id=make_id("mechanism", "forward_pocket_packing", mutation.notation),
             title="Candidate pocket-packing change",
@@ -82,8 +98,8 @@ class BaselineForwardReasoner:
             mechanism_type=MechanismType.POCKET_PACKING,
             direction=packing_direction,
             affected_region=f"residue {mutation.residue_number} and ligand-contact shell",
-            confidence=_bounded((0.63 if size_direction == Direction.DECREASE else 0.47) + packing_score),
-            provenance=_rule_provenance("smaller-side-chain -> candidate packing loss"),
+            confidence=packing_confidence,
+            provenance=_rule_provenance("smaller-side-chain -> candidate packing loss [LEGACY HEURISTIC]"),
             supports=(property_evidence.id, *coordinate_evidence_ids),
             limitations=(
                 "The mutation has not been placed or relaxed in 3D."
@@ -91,11 +107,25 @@ class BaselineForwardReasoner:
                 else "The paired structures are compared geometrically but may differ in "
                 "crystal state or unresolved conformational ensembles.",
             ),
+            score_breakdown=_make_score_breakdown(
+                ScoreType.MECHANISM_SUPPORT,
+                (0.63 if size_direction == Direction.DECREASE else 0.47) + packing_score,
+                supporting=_count_supporting_evidence(evidence, MechanismType.POCKET_PACKING),
+                conflicting=0,
+                missing=1 if not has_paired_comparison else 0,
+            ),
+            category=MechanismCategory.EVIDENCE_SUPPORTED,
+            evidence_graph=_build_evidence_graph(evidence, MechanismType.POCKET_PACKING),
+            calibration_status=CalibrationStatus.HEURISTIC,
+            qualitative_confidence=_qualitative(packing_confidence),
         )
         mechanisms = [mechanism]
         if any(item.evidence_type is EvidenceType.RESIDUE_NETWORK for item in evidence):
             network_evidence = tuple(
                 item.id for item in evidence if item.evidence_type is EvidenceType.RESIDUE_NETWORK
+            )
+            network_conf = _bounded(
+                0.48 + _evidence_support_score(evidence, MechanismType.RESIDUE_NETWORK)
             )
             mechanisms.append(
                 StructuralMechanism(
@@ -107,14 +137,22 @@ class BaselineForwardReasoner:
                     mechanism_type=MechanismType.RESIDUE_NETWORK,
                     direction=_measurement_direction(evidence, EvidenceType.RESIDUE_NETWORK),
                     affected_region="ligand-pocket residue graph",
-                    confidence=_bounded(
-                        0.48 + _evidence_support_score(evidence, MechanismType.RESIDUE_NETWORK)
-                    ),
+                    confidence=network_conf,
                     provenance=_rule_provenance(
-                        "computed residue-network delta -> candidate network mechanism"
+                        "computed residue-network delta -> candidate network mechanism [LEGACY HEURISTIC]"
                     ),
                     supports=network_evidence,
                     limitations=("Residue-network edges are cutoff based and structure-state specific.",),
+                    score_breakdown=_make_score_breakdown(
+                        ScoreType.MECHANISM_SUPPORT,
+                        0.48 + _evidence_support_score(evidence, MechanismType.RESIDUE_NETWORK),
+                        supporting=_count_supporting_evidence(evidence, MechanismType.RESIDUE_NETWORK),
+                        missing=1,
+                    ),
+                    category=MechanismCategory.EVIDENCE_SUPPORTED,
+                    evidence_graph=_build_evidence_graph(evidence, MechanismType.RESIDUE_NETWORK),
+                    calibration_status=CalibrationStatus.HEURISTIC,
+                    qualitative_confidence=_qualitative(network_conf),
                 )
             )
         if any(
@@ -130,6 +168,9 @@ class BaselineForwardReasoner:
                 in {EvidenceType.HYDROGEN_BOND, EvidenceType.WATER_BRIDGE, EvidenceType.SALT_BRIDGE}
                 and item.status is EvidenceStatus.COMPUTED
             )
+            anchoring_conf = _bounded(
+                0.42 + _evidence_support_score(evidence, MechanismType.LIGAND_ANCHORING)
+            )
             mechanisms.append(
                 StructuralMechanism(
                     id=make_id("mechanism", "forward_ligand_anchoring", mutation.notation),
@@ -142,17 +183,29 @@ class BaselineForwardReasoner:
                     affected_region=(
                         f"{mutation.notation} contact shell and ligand {request.ligand.identifier}"
                     ),
-                    confidence=_bounded(
-                        0.42 + _evidence_support_score(evidence, MechanismType.LIGAND_ANCHORING)
-                    ),
-                    provenance=_rule_provenance("typed interaction deltas -> ligand anchoring mechanism"),
+                    confidence=anchoring_conf,
+                    provenance=_rule_provenance("typed interaction deltas -> ligand anchoring mechanism [LEGACY HEURISTIC]"),
                     supports=anchoring_evidence,
                     limitations=(
                         "Interaction counts are local structural signatures, not occupancies "
                         "over an ensemble.",
                     ),
+                    score_breakdown=_make_score_breakdown(
+                        ScoreType.MECHANISM_SUPPORT,
+                        0.42 + _evidence_support_score(evidence, MechanismType.LIGAND_ANCHORING),
+                        supporting=_count_supporting_evidence(evidence, MechanismType.LIGAND_ANCHORING),
+                        missing=1,
+                    ),
+                    category=MechanismCategory.HYPOTHESIZED,
+                    evidence_graph=_build_evidence_graph(evidence, MechanismType.LIGAND_ANCHORING),
+                    calibration_status=CalibrationStatus.HEURISTIC,
+                    qualitative_confidence=_qualitative(anchoring_conf),
                 )
             )
+        func_score = _function_support_score(evidence)
+        func_support_count = _function_support_count(evidence)
+        affinity_conf = _bounded(0.42 + func_score)
+        resistance_conf = _bounded(0.36 + func_score)
         affinity = FunctionalHypothesis(
             id=make_id("hypothesis", "ligand_affinity", mutation.notation, request.ligand.identifier),
             title="Potential ligand-affinity decrease",
@@ -162,12 +215,32 @@ class BaselineForwardReasoner:
             ),
             function_type=FunctionType.LIGAND_AFFINITY,
             direction=Direction.DECREASE,
-            confidence=_bounded(0.42 + _function_support_score(evidence)),
-            provenance=_rule_provenance("packing loss -> possible affinity loss"),
+            confidence=affinity_conf,
+            provenance=_rule_provenance("packing loss -> possible affinity loss [LEGACY HEURISTIC]"),
             supports=(mechanism.id,),
             limitations=(
                 "Entropic compensation, water rearrangement, and conformational relaxation are unknown.",
             ),
+            score_breakdown=_make_score_breakdown(
+                ScoreType.EVIDENCE_COVERAGE,
+                0.42 + func_score,
+                supporting=func_support_count,
+                conflicting=0,
+                missing=3,  # MMGBSA, Ki, ΔΔG
+            ),
+            support_coverage=SupportCoverage(
+                current_evidence=tuple(
+                    item.id for item in evidence
+                    if item.status is EvidenceStatus.COMPUTED
+                    and item.evidence_type in {EvidenceType.RESIDUE_CONTACT, EvidenceType.HYDROPHOBIC_CONTACT}
+                ),
+                missing_evidence=("MMGBSA", "Ki / IC50", "ΔΔG"),
+                coverage_ratio=round(min(func_support_count / max(1, func_support_count + 3), 1.0), 2),
+                evidence_labels=("Contact change", "Hydrophobic change"),
+                missing_labels=("MMGBSA", "Ki / IC50", "ΔΔG"),
+            ),
+            calibration_status=CalibrationStatus.HEURISTIC,
+            qualitative_confidence=_qualitative(affinity_conf),
         )
         resistance = FunctionalHypothesis(
             id=make_id("hypothesis", "drug_resistance", mutation.notation, request.ligand.identifier),
@@ -179,12 +252,32 @@ class BaselineForwardReasoner:
             function_type=FunctionType.DRUG_RESISTANCE,
             direction=Direction.INCREASE,
             phenotype="drug_resistance",
-            confidence=_bounded(0.36 + _function_support_score(evidence)),
+            confidence=resistance_conf,
             provenance=_rule_provenance(
-                "inhibitor affinity loss with retained function -> possible resistance"
+                "inhibitor affinity loss with retained function -> possible resistance [LEGACY HEURISTIC]"
             ),
             supports=(affinity.id,),
             limitations=("The ligand role and retained catalytic competence have not been established.",),
+            score_breakdown=_make_score_breakdown(
+                ScoreType.EVIDENCE_COVERAGE,
+                0.36 + func_score,
+                supporting=func_support_count,
+                conflicting=0,
+                missing=4,  # catalytic activity, cell assay, drug assay, Ki
+            ),
+            support_coverage=SupportCoverage(
+                current_evidence=tuple(
+                    item.id for item in evidence
+                    if item.status is EvidenceStatus.COMPUTED
+                    and item.evidence_type in {EvidenceType.ENERGY_COMPONENT, EvidenceType.RESIDUE_CONTACT}
+                ),
+                missing_evidence=("Catalytic Activity", "Cell Assay", "Drug Assay", "Ki / IC50"),
+                coverage_ratio=round(min(func_support_count / max(1, func_support_count + 4), 1.0), 2),
+                evidence_labels=("Energy change", "Contact change"),
+                missing_labels=("Catalytic Activity", "Cell Assay", "Drug Assay", "Ki / IC50"),
+            ),
+            calibration_status=CalibrationStatus.HEURISTIC,
+            qualitative_confidence=_qualitative(resistance_conf),
         )
 
         missing_contacts = MissingEvidence(
@@ -256,6 +349,24 @@ class BaselineForwardReasoner:
                 method="Measure matched wild-type and mutant binding affinity under the same conditions.",
                 expected_result="Lower mutant affinity would support the functional hypothesis.",
                 addresses=(missing_energy.id, affinity.id, resistance.id),
+            ),
+            ValidationStep(
+                id=make_id("validation", "md", mutation.notation, request.ligand.identifier),
+                priority=4,
+                kind=ValidationKind.MOLECULAR_DYNAMICS,
+                objective="Characterize conformational dynamics and interaction occupancies.",
+                method="Run MD simulations for WT and mutant; compute contact occupancies, RMSF, hydrogen-bond lifetimes.",
+                expected_result="MD-derived occupancies and dynamics should corroborate structural mechanisms.",
+                addresses=(missing_contacts.id, missing_energy.id),
+            ),
+            ValidationStep(
+                id=make_id("validation", "experiment", mutation.notation, request.ligand.identifier),
+                priority=5,
+                kind=ValidationKind.FUNCTIONAL_ASSAY,
+                objective="Validate resistance phenotype experimentally.",
+                method="Measure catalytic activity, cell-based drug susceptibility, and selectivity panel.",
+                expected_result="Mutant retains catalytic function while inhibitor potency drops ≥ 5-fold.",
+                addresses=(resistance.id, missing_energy.id),
             ),
         )
         return ForwardResult(
@@ -472,6 +583,7 @@ class BaselineReverseReasoner:
         title: str,
         description: str,
         confidence: float,
+        category: MechanismCategory = MechanismCategory.HYPOTHESIZED,
     ) -> StructuralMechanism:
         assert request.phenotype is not None
         return StructuralMechanism(
@@ -486,7 +598,10 @@ class BaselineReverseReasoner:
                 Provenance(kind=ProvenanceKind.INPUT, source="analysis request phenotype"),
                 *_rule_provenance("phenotype -> candidate structural mechanism"),
             ),
-            limitations=("This mechanism is reverse-inferred and requires physical evidence.",),
+            limitations=("This mechanism is reverse-inferred and requires physical evidence. [LEGACY HEURISTIC]",),
+            category=category,
+            calibration_status=CalibrationStatus.HEURISTIC,
+            qualitative_confidence=_qualitative(confidence),
         )
 
     @staticmethod
@@ -581,6 +696,14 @@ class BaselineConsistencyChecker:
                     "Agreement is strengthened only by computed evidence that matches the "
                     "nominated mechanism.",
                 ),
+                agreement_detail=AgreementDetail(
+                    physical_agreement=round(
+                        min(forward_by_type[mechanism_type].confidence,
+                            reverse_by_type[mechanism_type].confidence), 3),
+                    functional_agreement=round(_consistency_bonus(evidence, mechanism_type), 3),
+                    phenotype_agreement=round(
+                        0.5 + 0.5 * _consistency_bonus(evidence, mechanism_type), 3),
+                ),
             )
             for mechanism_type in shared
         )
@@ -588,6 +711,135 @@ class BaselineConsistencyChecker:
 
 def _bounded(value: float) -> float:
     return round(max(0.0, min(0.95, value)), 3)
+
+
+def _qualitative(value: float) -> QualitativeConfidence:
+    """Map a heuristic numeric score to a qualitative label (V3 P0)."""
+    if value >= 0.70:
+        return QualitativeConfidence.STRONG
+    if value >= 0.45:
+        return QualitativeConfidence.MODERATE
+    if value >= 0.25:
+        return QualitativeConfidence.WEAK
+    return QualitativeConfidence.INSUFFICIENT
+
+
+def _make_score_breakdown(
+    score_type: ScoreType,
+    raw_score: float,
+    supporting: int = 0,
+    conflicting: int = 0,
+    missing: int = 0,
+    quality_factor: float = 1.0,
+) -> ScoreBreakdown:
+    return ScoreBreakdown(
+        score_type=score_type,
+        raw_score=round(_bounded(raw_score), 3),
+        supporting_evidence_count=supporting,
+        conflicting_evidence_count=conflicting,
+        missing_evidence_count=missing,
+        evidence_quality_factor=round(quality_factor, 3),
+    )
+
+
+def _count_supporting_evidence(
+    evidence: tuple[PhysicalEvidence, ...],
+    mechanism_type: MechanismType,
+) -> int:
+    return len(_supporting_evidence_for_mechanism(evidence, mechanism_type))
+
+
+def _build_evidence_graph(
+    evidence: tuple[PhysicalEvidence, ...],
+    mechanism_type: MechanismType,
+) -> EvidenceGraph:
+    """Build a structured evidence graph for a mechanism."""
+    type_map = {
+        MechanismType.POCKET_PACKING: {
+            EvidenceType.RESIDUE_CONTACT,
+            EvidenceType.POCKET_GEOMETRY,
+            EvidenceType.HYDROPHOBIC_CONTACT,
+            EvidenceType.ENERGY_COMPONENT,
+            EvidenceType.ATOMIC_DISTANCE,
+            EvidenceType.RESIDUE_NETWORK,
+        },
+        MechanismType.LIGAND_ANCHORING: {
+            EvidenceType.HYDROGEN_BOND,
+            EvidenceType.SALT_BRIDGE,
+            EvidenceType.WATER_BRIDGE,
+            EvidenceType.ENERGY_COMPONENT,
+        },
+        MechanismType.RESIDUE_NETWORK: {EvidenceType.RESIDUE_NETWORK},
+    }
+    relevant = type_map.get(mechanism_type, set())
+
+    supporting: list[EvidenceNode] = []
+    conflicting: list[EvidenceNode] = []
+
+    for item in evidence:
+        if item.status is not EvidenceStatus.COMPUTED:
+            continue
+        if item.evidence_type not in relevant:
+            continue
+        m = item.measurement
+        value_str = ""
+        direction = Direction.UNKNOWN
+        if m is not None:
+            direction = m.direction
+            value_str = f"{m.value} {m.unit or ''}".strip()
+        node = EvidenceNode(
+            evidence_label=item.title,
+            value=value_str,
+            direction=direction,
+            is_supporting=True,
+        )
+        # If a measurement shows UNCHANGED for a mechanism that expects
+        # CHANGE, that is conflicting evidence.
+        if m is not None and direction is Direction.UNCHANGED:
+            node = node.model_copy(update={"is_supporting": False})
+            conflicting.append(node)
+        else:
+            supporting.append(node)
+
+    # Missing evidence nodes
+    missing = _build_missing_nodes(mechanism_type, evidence)
+
+    return EvidenceGraph(
+        supporting=tuple(supporting),
+        conflicting=tuple(conflicting),
+        missing=tuple(missing),
+    )
+
+
+def _build_missing_nodes(
+    mechanism_type: MechanismType,
+    evidence: tuple[PhysicalEvidence, ...],
+) -> list[MissingEvidenceNode]:
+    """Determine what evidence types are missing for a mechanism."""
+    present_types = frozenset(
+        item.evidence_type for item in evidence if item.status is EvidenceStatus.COMPUTED
+    )
+    missing_defs = {
+        MechanismType.POCKET_PACKING: (
+            (EvidenceType.POCKET_GEOMETRY, "Real pocket volume change"),
+            (EvidenceType.ENERGY_COMPONENT, "Binding energy calculation"),
+        ),
+        MechanismType.LIGAND_ANCHORING: (
+            (EvidenceType.HYDROGEN_BOND, "Hydrogen bond occupancy"),
+            (EvidenceType.ENERGY_COMPONENT, "Anchor-point energy"),
+        ),
+        MechanismType.RESIDUE_NETWORK: (
+            (EvidenceType.POCKET_GEOMETRY, "Network topology change magnitude"),
+        ),
+    }
+    nodes: list[MissingEvidenceNode] = []
+    for ev_type, importance in missing_defs.get(mechanism_type, ()):
+        if ev_type not in present_types:
+            nodes.append(MissingEvidenceNode(
+                evidence_label=ev_type.value,
+                importance=importance,
+            ))
+    return nodes
 
 
 def _measurement_direction(evidence: tuple[PhysicalEvidence, ...], evidence_type: EvidenceType) -> Direction:
@@ -634,6 +886,22 @@ def _function_support_score(evidence: tuple[PhysicalEvidence, ...]) -> float:
         elif item.evidence_type in {EvidenceType.RESIDUE_CONTACT, EvidenceType.HYDROPHOBIC_CONTACT}:
             score += 0.04 if item.measurement.direction is not Direction.UNCHANGED else 0.0
     return score
+
+
+def _function_support_count(evidence: tuple[PhysicalEvidence, ...]) -> int:
+    """Count how many computed evidence items support functional hypotheses."""
+    count = 0
+    for item in evidence:
+        if item.status is not EvidenceStatus.COMPUTED:
+            continue
+        if item.evidence_type in {
+            EvidenceType.ENERGY_COMPONENT,
+            EvidenceType.RESIDUE_CONTACT,
+            EvidenceType.HYDROPHOBIC_CONTACT,
+            EvidenceType.ATOMIC_DISTANCE,
+        }:
+            count += 1
+    return count
 
 
 def _matching_evidence_ids(

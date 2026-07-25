@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from psf_reasoner.identifiers import make_id
 from psf_reasoner.physical.geometry import nearest_heavy_atom_pair
-from psf_reasoner.physical.interactions import InteractionCounts, count_typed_interactions
+from psf_reasoner.physical.interactions import InteractionCounts, count_typed_interactions, analyze_typed_interactions
 from psf_reasoner.physical.metrics import ligand_shell_bounding_box_volume, residue_sasa
 from psf_reasoner.physical.structure import (
     ParsedStructure,
@@ -15,7 +15,13 @@ from psf_reasoner.physical.structure import (
     StructureParser,
 )
 from psf_reasoner.schemas.common import Direction, Provenance, ProvenanceKind
-from psf_reasoner.schemas.evidence import EvidenceStatus, EvidenceType, Measurement, PhysicalEvidence
+from psf_reasoner.schemas.evidence import (
+    EvidenceStatus,
+    EvidenceType,
+    InteractionDetail,
+    Measurement,
+    PhysicalEvidence,
+)
 from psf_reasoner.schemas.inputs import AnalysisRequest
 
 CONTACT_CUTOFF_ANGSTROM = 4.0
@@ -81,16 +87,18 @@ class ComparativeEvidenceProvider:
         mutant_contact = mutant_distance.angstrom <= CONTACT_CUTOFF_ANGSTROM
         reference_sasa = residue_sasa(reference_structure, pair.reference)
         mutant_sasa = residue_sasa(mutant_structure, pair.mutant)
-        reference_interactions = count_typed_interactions(
+        reference_analysis = analyze_typed_interactions(
             pair.reference,
             reference_ligand,
             _waters(reference_structure),
         )
-        mutant_interactions = count_typed_interactions(
+        mutant_analysis = analyze_typed_interactions(
             pair.mutant,
             mutant_ligand,
             _waters(mutant_structure),
         )
+        reference_interactions = reference_analysis.counts
+        mutant_interactions = mutant_analysis.counts
         return (
             self._delta_evidence(
                 request,
@@ -146,6 +154,8 @@ class ComparativeEvidenceProvider:
                 pair,
                 reference_interactions,
                 mutant_interactions,
+                reference_analysis,
+                mutant_analysis,
             ),
         )
 
@@ -155,7 +165,27 @@ class ComparativeEvidenceProvider:
         pair: ResidueComparison,
         reference: InteractionCounts,
         mutant: InteractionCounts,
+        reference_analysis: object = None,
+        mutant_analysis: object = None,
     ) -> tuple[PhysicalEvidence, ...]:
+        """Build per-interaction-class delta evidence with atom-level provenance."""
+
+        def _details(analysis, interaction_type: str) -> tuple[InteractionDetail, ...]:
+            if analysis is None:
+                return ()
+            return tuple(
+                InteractionDetail(
+                    interaction_type=item.interaction_type,
+                    protein_atom=item.protein_atom,
+                    ligand_atom=item.ligand_atom,
+                    distance_angstrom=item.distance_angstrom,
+                    geometry=item.geometry,
+                    confidence=item.confidence,
+                    mediator=item.mediator,
+                )
+                for item in getattr(analysis, "interactions", ())
+                if item.interaction_type == interaction_type
+            )
         return (
             self._delta_evidence(
                 request,
@@ -172,6 +202,10 @@ class ComparativeEvidenceProvider:
                 ),
                 0.70,
                 "paired donor-acceptor heavy-atom classification",
+                interaction_details=(
+                    *_details(reference_analysis, "hydrogen_bond"),
+                    *_details(mutant_analysis, "hydrogen_bond"),
+                ),
             ),
             self._delta_evidence(
                 request,
@@ -188,6 +222,10 @@ class ComparativeEvidenceProvider:
                 ),
                 0.65,
                 "paired atom-typed hydrophobic classification",
+                interaction_details=(
+                    *_details(reference_analysis, "hydrophobic_contact"),
+                    *_details(mutant_analysis, "hydrophobic_contact"),
+                ),
             ),
             self._delta_evidence(
                 request,
@@ -204,6 +242,10 @@ class ComparativeEvidenceProvider:
                 ),
                 0.70,
                 "paired explicit-charge salt-bridge classification",
+                interaction_details=(
+                    *_details(reference_analysis, "salt_bridge"),
+                    *_details(mutant_analysis, "salt_bridge"),
+                ),
             ),
             self._delta_evidence(
                 request,
@@ -220,6 +262,10 @@ class ComparativeEvidenceProvider:
                 ),
                 0.40,
                 "paired aromatic-ring centroid classification",
+                interaction_details=(
+                    *_details(reference_analysis, "pi_interaction"),
+                    *_details(mutant_analysis, "pi_interaction"),
+                ),
             ),
             self._delta_evidence(
                 request,
@@ -236,6 +282,10 @@ class ComparativeEvidenceProvider:
                 ),
                 0.50,
                 "paired explicit-water bridge classification",
+                interaction_details=(
+                    *_details(reference_analysis, "water_bridge"),
+                    *_details(mutant_analysis, "water_bridge"),
+                ),
             ),
         )
 
@@ -297,6 +347,7 @@ class ComparativeEvidenceProvider:
         description: str,
         confidence: float,
         method: str,
+        interaction_details: tuple = (),
     ) -> PhysicalEvidence:
         delta = mutant_value - reference_value
         return PhysicalEvidence(
@@ -323,6 +374,7 @@ class ComparativeEvidenceProvider:
             confidence=confidence,
             provenance=_paired_provenance(request, method),
             limitations=_interaction_limitations(evidence_type),
+            interaction_details=interaction_details,
         )
 
 
