@@ -1,0 +1,115 @@
+{
+  "case_id": "hiv1-l90m-mk1",
+  "title": "HIV-1 蛋白酶 L90M 对 MK1（indinavir）的超敏感效应：二聚体界面突变的反直觉结果",
+  "protein": {
+    "name": "HIV-1 protease",
+    "species": "Human immunodeficiency virus 1",
+    "uniprot_accession": "P03367",
+    "pdb_id_wt": "1SDT",
+    "pdb_id_mutant": "1SDU"
+  },
+  "mutation": {
+    "notation": "L90M",
+    "wt_residue": "L",
+    "mutant_residue": "M",
+    "chain": "A",
+    "uniprot_position": 90,
+    "pdb_position": 90,
+    "mapping_note": "UniProt 与 PDB 编号一致；1SDU 为同系列论文的 L90M + MK1 复合物（1.25 Å）。"
+  },
+  "structures": {
+    "wild_type": {
+      "pdb_id": "1SDT", "file": "examples/data/1sdt.cif",
+      "method": "X-ray", "resolution_a": 1.3,
+      "ligands": [{"id": "MK1", "role": "inhibitor"}],
+      "background_mutations": ["Q7K", "L33I", "L63I", "C67A", "C95A"],
+      "quality_notes": ""
+    },
+    "mutant": {
+      "pdb_id": "1SDU", "file": "examples/data/1sdu.cif",
+      "method": "X-ray", "resolution_a": 1.25,
+      "ligands": [{"id": "MK1", "role": "inhibitor"}],
+      "background_mutations": ["Q7K", "L33I", "L63I", "C67A", "C95A", "L90M"],
+      "quality_notes": "同系列论文、同晶形、同配体。"
+    },
+    "pair_comparability": {
+      "grade": "comparable",
+      "notes": "同配体、同背景突变（除 L90M）；L90 位于二聚体界面，远离活性位点。"
+    }
+  },
+  "functional_measurement": {
+    "assay_type": "Ki",
+    "wt_value": 1.0, "mutant_value": 0.16,
+    "value_unit": "fold_Ki",
+    "conditions": "pH 5.0, 25°C（Mahalingam 2004；绝对值 540→86 pM 待全文复核）",
+    "fold_change": 0.16,
+    "direction": "affinity_increase",
+    "phenotype": "increased_susceptibility"
+  },
+  "provenance": {
+    "pmid": "15066177",
+    "doi": "10.1111/j.1432-1033.2004.04060.x",
+    "source_location": "Mahalingam et al. 2004, Eur J Biochem 271(8):1516-24，摘要",
+    "quote_or_note": "摘要原文：\"The inhibition (Ki) of PR(L90M) ... was 0.16-fold\"，即对 indinavir 敏感性升高约 6 倍。"
+  },
+  "mechanism": {
+    "conclusion": "L90M 位于二聚体界面而非活性位点。其对 indinavir 结合反而增强（Ki 0.16 倍），说明并非所有“耐药相关”突变都削弱结合——文献报告的机制假设是界面堆积改变影响活性位点动力学/构象，但这一解释尚未被原子级证据完全证实。",
+    "supporting_evidence": [
+      "文献：Ki 0.16 倍（PMID 15066177，摘要确证）",
+      "结构：L90 远离配体（界面残基），排除了直接接触机制"
+    ],
+    "conflicting_evidence": [],
+    "missing_evidence": [
+      "界面接触在 1SDT vs 1SDU 之间的定量变化（平台目前未输出界面接触对比）",
+      "构象动力学数据（无 MD 证据）",
+      "绝对值 540→86 pM 待全文复核"
+    ]
+  },
+  "review": {
+    "status": "verified",
+    "reviewed_by": "2026-09-10 证据审计（docs/EVIDENCE-REVIEW.md）",
+    "review_date": "2026-09-10",
+    "notes": "倍数与方向已核实；结构配对已修正（此前误把 1SDV 当作 L90M 结构）。"
+  },
+  "usage": {
+    "demo_ready": true,
+    "teaching_ready": true,
+    "quantitative_eval_ready": false
+  },
+  "teaching": {
+    "background": "L90M 在临床上是重要的蛋白酶抑制剂耐药相关突变，但它与 V82A 完全不同：它位于二聚体界面，远离底物/抑制剂结合口袋。同一位点的突变可以因为作用位置不同而产生完全相反的效应——本案例中 L90M 反而使 indinavir 结合增强。",
+    "learning_objectives": [
+      "理解突变位置（活性位点 vs 界面 vs 表面）决定机制类型",
+      "认识“耐药相关”≠“结合减弱”——耐药表型是多因素的",
+      "学会在看到反直觉结果时检查证据链而不是套用模板"
+    ],
+    "observation_tasks": [
+      "运行 L90M 分析（WT=1sdt.cif，mutant=1sdu.cif，ligand=MK1，mutation=L90M，chain=A）",
+      "在 3D 视图中比较 L90 与配体的距离，确认它不在结合口袋内",
+      "对比本案例与 V82A 案例的 Causal Mechanism Graph 差异"
+    ],
+    "thinking_questions": [
+      "如果 L90M 增强结合，它为什么在临床上与耐药相关？",
+      "平台的结构证据能直接解释 0.16 倍吗？如果不能，缺什么？",
+      "“远离活性位点的突变不影响功能”这句话错在哪里？"
+    ],
+    "stepwise_explanation": [
+      {"step": "物理参数层：L→M 侧链几乎等体积（167→163 Å³），增加一个硫原子", "evidence_status": "computed", "note": "通用侧链体积表"},
+      {"step": "结构机制层：界面堆积微调 → 活性位点构象/动力学变化（假设）", "evidence_status": "hypothesis", "note": "平台没有直接的界面接触对比输出，这一步是文献假说而非本平台计算"},
+      {"step": "功能影响层：Ki 0.16 倍（结合增强）", "evidence_status": "fact", "note": "Mahalingam 2004 摘要"}
+    ],
+    "facts": [
+      "L90M 对 indinavir 的 Ki 为野生型 0.16 倍",
+      "L90 位于二聚体界面，不直接接触配体",
+      "1SDU 是 L90M + MK1 复合物（1.25 Å）"
+    ],
+    "computed_inferences": [
+      "平台可确认 L90 与配体的距离远大于接触截断（结构直接观测）"
+    ],
+    "hypotheses": [
+      "界面堆积改变通过二聚体动力学间接影响配体结合（文献假说，未经本平台计算证实）",
+      "L90M 的临床耐药源于对多种抑制剂的综合效应与病毒适应度"
+    ],
+    "run_instructions": "网页工作台：WT=examples/data/1sdt.cif，突变体=examples/data/1sdu.cif，配体 MK1，突变 L90M，链 A。或命令行：psf analyze --structure examples/data/1sdt.cif --mutant-structure examples/data/1sdu.cif --ligand MK1 --mutation L90M --chain A --phenotype drug_resistance"
+  }
+}

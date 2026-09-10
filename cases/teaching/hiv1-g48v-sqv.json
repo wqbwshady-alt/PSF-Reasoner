@@ -1,0 +1,107 @@
+{
+  "case_id": "hiv1-g48v-sqv",
+  "title": "HIV-1 蛋白酶 G48V 对沙奎那韦（SQV）的结合影响：flap 区突变的 86 倍 Ki 变化（无突变结构案例）",
+  "protein": {
+    "name": "HIV-1 protease",
+    "species": "Human immunodeficiency virus 1",
+    "uniprot_accession": "P03367",
+    "pdb_id_wt": "1SDT",
+    "pdb_id_mutant": null
+  },
+  "mutation": {
+    "notation": "G48V",
+    "wt_residue": "G",
+    "mutant_residue": "V",
+    "chain": "A",
+    "uniprot_position": 48,
+    "pdb_position": 48,
+    "mapping_note": "UniProt 与 PDB 编号一致（HIV-1 蛋白酶 flap 区）。"
+  },
+  "structures": {
+    "wild_type": {
+      "pdb_id": "1SDT", "file": "examples/data/1sdt.cif",
+      "method": "X-ray", "resolution_a": 1.3,
+      "ligands": [{"id": "MK1", "role": "inhibitor"}],
+      "background_mutations": ["Q7K", "L33I", "L63I", "C67A", "C95A"],
+      "quality_notes": "注意：1SDT 的配体是 indinavir（MK1），不是沙奎那韦。本案例没有与实验配体一致的突变体结构。"
+    },
+    "mutant": null,
+    "pair_comparability": {
+      "grade": "poorly",
+      "notes": "无 G48V 突变体结构；可用的 1SDT 配体（MK1）也与实验配体（SQV）不符。任何结构比较都不成立，平台应明确说明这一点。"
+    }
+  },
+  "functional_measurement": {
+    "assay_type": "Ki",
+    "wt_value": 0.42, "mutant_value": 36.0,
+    "value_unit": "nM",
+    "conditions": "Liu et al. 2008, J Mol Biol 381:102-15（Table 1；WT Ki 0.42±0.07 nM）",
+    "fold_change": 86.0,
+    "direction": "affinity_decrease",
+    "phenotype": "drug_resistance"
+  },
+  "provenance": {
+    "pmid": "18597780",
+    "doi": "10.1016/j.jmb.2008.05.062",
+    "source_location": "Liu et al. 2008, J Mol Biol 381(1):102-15, Table 1",
+    "quote_or_note": "Table 1：G48V 使 SQV Ki 从 0.42 nM 升至 36 nM（86 倍），已对照 PMC2754059 逐项核实。"
+  },
+  "mechanism": {
+    "conclusion": "Gly48 位于蛋白酶 flap 区（覆盖活性位点的柔性臂）。G→V 引入较大侧链，文献机制假设为 flap 构象/动力学受扰，削弱沙奎那韦结合（86 倍）。由于缺乏突变体结构，本案例的机制结论只能作为文献+推理假设，不能做结构级验证。",
+    "supporting_evidence": [
+      "文献：86 倍 Ki 升高（PMID 18597780 Table 1，已核实）",
+      "位置信息：G48 位于 flap 区（序列知识）"
+    ],
+    "conflicting_evidence": [],
+    "missing_evidence": [
+      "G48V 突变体结构（无）",
+      "flap 构象变化的直接证据（无）",
+      "沙奎那韦复合物结构对比（无配对结构）"
+    ]
+  },
+  "review": {
+    "status": "verified",
+    "reviewed_by": "2026-09-10 证据审计（docs/EVIDENCE-REVIEW.md）",
+    "review_date": "2026-09-10",
+    "notes": "实验数值已核实；机制部分明确标注为假说。"
+  },
+  "usage": {
+    "demo_ready": true,
+    "teaching_ready": true,
+    "quantitative_eval_ready": false
+  },
+  "teaching": {
+    "background": "沙奎那韦是第一个上市的 HIV 蛋白酶抑制剂。G48V 是沙奎那韦治疗的经典耐药突变，位于蛋白酶 flap 区。本案例的特殊教学价值在于：**没有突变体结构**——它教会学生在证据不足时，平台应该说什么、不应该说什么。",
+    "learning_objectives": [
+      "理解实验数值与结构机制证据是两回事：有 86 倍数据 ≠ 有机制解释",
+      "识别平台在无突变结构时的正确行为（明确说明限制，而不是伪造结构变化）",
+      "了解 flap 区在蛋白酶功能中的作用"
+    ],
+    "observation_tasks": [
+      "只上传 WT 结构（1sdt.cif）运行分析，观察平台如何说明“未提供突变体结构”",
+      "在报告中找到 Limitations 部分，逐条阅读",
+      "比较：为什么本案例的因果图与 V82A 案例不同（无结构差异 → 无结构级因果节点）"
+    ],
+    "thinking_questions": [
+      "如果平台在无突变结构时给出“结构变化”，你会相信吗？为什么？",
+      "要验证 G48V 的 flap 机制假说，需要什么实验/计算？",
+      "86 倍的数值可信度高（已核实），机制解释可信度低（无结构）——两者能共存在一个结论里吗？"
+    ],
+    "stepwise_explanation": [
+      {"step": "物理参数层：G→V 引入侧链（体积增大），flap 区柔性可能下降", "evidence_status": "computed", "note": "通用侧链性质；flap 柔性变化为推断"},
+      {"step": "结构机制层：flap 构象/动力学受扰 → SQV 结合削弱（假说）", "evidence_status": "hypothesis", "note": "无突变结构，无法用本平台验证"},
+      {"step": "功能影响层：Ki 0.42→36 nM（86 倍）", "evidence_status": "fact", "note": "Liu 2008 Table 1，已核实"}
+    ],
+    "facts": [
+      "G48V 使 SQV Ki 升高 86 倍（PMID 18597780 Table 1）",
+      "G48 位于 flap 区",
+      "仓库中没有 G48V 突变体结构，也没有 SQV 复合物配对结构"
+    ],
+    "computed_inferences": [],
+    "hypotheses": [
+      "flap 构象受扰是 86 倍的机制（文献假说，未验证）",
+      "侧链引入直接与 SQV 碰撞（未验证，甚至可能不成立）"
+    ],
+    "run_instructions": "网页工作台：WT=examples/data/1sdt.cif，不选突变体文件，配体 MK1，突变 G48V，链 A。观察“未提供突变体结构”的说明。注意：1sdt 的配体是 MK1 不是 SQV——本案例运行仅用于体验“证据不足”流程，不产生结构比较结论。"
+  }
+}

@@ -1,0 +1,119 @@
+{
+  "case_id": "hiv1-v82a-mk1",
+  "title": "HIV-1 蛋白酶 V82A 对 MK1（indinavir）的结合影响：S1 口袋疏水堆积的丢失",
+  "protein": {
+    "name": "HIV-1 protease",
+    "species": "Human immunodeficiency virus 1",
+    "uniprot_accession": "P03367",
+    "pdb_id_wt": "1SDT",
+    "pdb_id_mutant": "1SDV"
+  },
+  "mutation": {
+    "notation": "V82A",
+    "wt_residue": "V",
+    "mutant_residue": "A",
+    "chain": "A",
+    "uniprot_position": 82,
+    "pdb_position": 82,
+    "mapping_note": "1SDT/1SDV 与 UniProt P03367 编号一致（82 位）。逐位比对确认 1SDV 与 1SDT 全序列仅第 82 位 V→A 不同。"
+  },
+  "structures": {
+    "wild_type": {
+      "pdb_id": "1SDT", "file": "examples/data/1sdt.cif",
+      "method": "X-ray", "resolution_a": 1.3,
+      "ligands": [{"id": "MK1", "role": "inhibitor"}],
+      "background_mutations": ["Q7K", "L33I", "L63I", "C67A", "C95A"],
+      "quality_notes": "野生型活性位点结构；背景突变已记录（相对 UniProt P03367）。"
+    },
+    "mutant": {
+      "pdb_id": "1SDV", "file": "examples/data/1sdv.cif",
+      "method": "X-ray", "resolution_a": 1.4,
+      "ligands": [{"id": "MK1", "role": "inhibitor"}],
+      "background_mutations": ["Q7K", "L33I", "L63I", "C67A", "C95A", "V82A"],
+      "quality_notes": "与 1SDT 同源同晶，适合直接比较。"
+    },
+    "pair_comparability": {
+      "grade": "comparable",
+      "notes": "同晶形、同配体、同背景突变（除 V82A），分辨率 1.30/1.40 Å。"
+    }
+  },
+  "functional_measurement": {
+    "assay_type": "Ki",
+    "wt_value": 1.0, "mutant_value": 3.3,
+    "value_unit": "fold_Ki",
+    "conditions": "pH 5.0, 25°C（Mahalingam 2004；绝对值 540→1810 pM 待全文复核）",
+    "fold_change": 3.3,
+    "direction": "affinity_decrease",
+    "phenotype": "drug_resistance"
+  },
+  "provenance": {
+    "pmid": "15066177",
+    "doi": "10.1111/j.1432-1033.2004.04060.x",
+    "source_location": "Mahalingam et al. 2004, Eur J Biochem 271(8):1516-24，摘要（倍数）；Table 1（绝对值，待全文复核）",
+    "quote_or_note": "摘要原文：\"The inhibition (Ki) of PR(V82A) ... was 3.3-fold\"（相对野生型、对 indinavir）。"
+  },
+  "mechanism": {
+    "conclusion": "V82A 将 S1 口袋内的缬氨酸侧链截短为丙氨酸：侧链体积减小（~140→89 Å³）导致与 indinavir P1 苯基的疏水/范德华接触丢失，配体锚定减弱，Ki 升高约 3.3 倍。",
+    "supporting_evidence": [
+      "结构计算：1SDT 中 A:VAL82 距配体最近重原子 3.782 Å（VAL82:CG2–MK1:C16），位于 4.0 Å 接触截断内",
+      "结构计算：V82A 后侧链体积类别 3→1，接触数目与局部几何指标下降（平台可复现）",
+      "文献：Mahalingam 2004 摘要确证 Ki 3.3 倍（PMID 15066177）"
+    ],
+    "conflicting_evidence": [],
+    "missing_evidence": [
+      "1SDV 与 1SDT 之间相互作用变化的原子级定量（氢键/疏水接触逐条对比）尚未由平台完整输出",
+      "Ki 绝对值（540→1810 pM）与实验误差需全文复核",
+      "耐药表型还要求催化活性保留，本平台未评估"
+    ]
+  },
+  "review": {
+    "status": "verified",
+    "reviewed_by": "2026-09-10 证据审计（docs/EVIDENCE-REVIEW.md）",
+    "review_date": "2026-09-10",
+    "notes": "结构配对、配体身份（MK1=L-735,524=indinavir）、突变身份与 Ki 倍数均已独立核实。"
+  },
+  "usage": {
+    "demo_ready": true,
+    "teaching_ready": true,
+    "quantitative_eval_ready": false
+  },
+  "teaching": {
+    "background": "HIV-1 蛋白酶是二聚体天冬氨酸蛋白酶，将病毒多蛋白前体切割为成熟蛋白，是抗 HIV 药物的核心靶点。indinavir（L-735,524，PDB 代码 MK1）是拟肽类蛋白酶抑制剂，占据 S1/S2/S1'/S2' 四个口袋。Val82 位于 S1 口袋内壁，其侧链与抑制剂 P1 基团形成疏水接触。V82A 是临床上最早被识别的蛋白酶抑制剂耐药突变之一。",
+    "learning_objectives": [
+      "理解侧链截短（体积减小、极性不变）如何通过接触丢失影响配体结合",
+      "能区分三种证据状态：结构直接观测、平台计算推断、文献实验值",
+      "能解释因果链：物理参数变化 → 结构机制 → 功能假设"
+    ],
+    "observation_tasks": [
+      "运行 V82A 双向分析（WT=1sdt.cif，mutant=1sdv.cif，ligand=MK1，mutation=V82A，chain=A）",
+      "在 Physical Evidence 中找到最近距离证据，记录 WT 与突变体的数值",
+      "点击“定位突变位点”与“定位4Å邻域”，在 3D 视图中找出 Val82 与配体的空间关系",
+      "阅读 Causal Mechanism Graph，找出体积变化 → 接触变化 → 结合影响的完整路径"
+    ],
+    "thinking_questions": [
+      "体积变小为什么通常不利于结合？什么情况下体积变小反而有利？",
+      "如果平台只显示“接触数目变化”，你能说出这算观测还是计算吗？",
+      "3.3 倍 Ki 升高能直接推出临床耐药吗？还缺什么证据？"
+    ],
+    "stepwise_explanation": [
+      {"step": "物理参数层：V→A 侧链体积 140→89 Å³（减小），电荷与极性不变", "evidence_status": "computed", "note": "氨基酸侧链体积表为通用知识，属计算标注"},
+      {"step": "结构机制层：S1 口袋内的疏水/范德华接触丢失，配体锚定减弱", "evidence_status": "computed", "note": "平台的距离/接触证据支持（WT 最近距离 3.782 Å 处于接触截断内）"},
+      {"step": "功能影响层：Ki 升高约 3.3 倍（Mahalingam 2004）", "evidence_status": "fact", "note": "实验测量值，来自文献摘要"},
+      {"step": "表型延伸：可能贡献于 indinavir 耐药", "evidence_status": "hypothesis", "note": "耐药还取决于催化活性保留与病毒适应度，未经本案例实验直接证明"}
+    ],
+    "facts": [
+      "1SDV 确为 V82A 突变体（全序列仅第 82 位与 1SDT 不同）",
+      "1SDT/1SDV 的配体均为 MK1（indinavir）",
+      "Mahalingam 2004：V82A 对 indinavir 的 Ki 为野生型的 3.3 倍"
+    ],
+    "computed_inferences": [
+      "平台距离计算：A:VAL82:CG2 到 MK1:C16 为 3.782 Å（可复现）",
+      "侧链体积减小与接触指标下降（平台输出，需配合逐原子对比解读）"
+    ],
+    "hypotheses": [
+      "接触丢失主要发生在 S1 口袋的疏水堆积（未经能量计算证实）",
+      "3.3 倍 Ki 变化足以在临床上产生耐药选择压力（未经本案例实验证明）"
+    ],
+    "run_instructions": "网页工作台：WT 文件选择 examples/data/1sdt.cif，突变体文件选择 examples/data/1sdv.cif，配体 MK1，突变 V82A，链 A，模式“双向 P⇄F”。或命令行：psf analyze --structure examples/data/1sdt.cif --mutant-structure examples/data/1sdv.cif --ligand MK1 --mutation V82A --chain A --phenotype drug_resistance"
+  }
+}

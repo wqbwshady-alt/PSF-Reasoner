@@ -1,0 +1,109 @@
+{
+  "case_id": "dhfr-f31r-mtx",
+  "title": "人 DHFR F31R 对甲氨蝶呤的结合影响：锚定残基替换（ΔΔG = 2.1 kcal/mol）",
+  "protein": {
+    "name": "Human Dihydrofolate Reductase",
+    "species": "Homo sapiens",
+    "uniprot_accession": "P00374",
+    "pdb_id_wt": "1U72",
+    "pdb_id_mutant": null
+  },
+  "mutation": {
+    "notation": "F31R",
+    "wt_residue": "F",
+    "mutant_residue": "R",
+    "chain": "A",
+    "uniprot_position": 31,
+    "pdb_position": 31,
+    "mapping_note": "UniProt 与 1U72 编号一致（Phe31）。"
+  },
+  "structures": {
+    "wild_type": {
+      "pdb_id": "1U72", "file": "examples/data/1u72.pdb",
+      "method": "X-ray", "resolution_a": 1.9,
+      "ligands": [{"id": "MTX", "role": "inhibitor"}, {"id": "NDP", "role": "cofactor"}],
+      "background_mutations": [],
+      "quality_notes": "野生型 DHFR + MTX + NADPH；无 F31R 突变体结构。"
+    },
+    "mutant": null,
+    "pair_comparability": {
+      "grade": "poorly",
+      "notes": "无突变体结构；机制结论依赖文献 ΔΔG 与 WT 结构分析。"
+    }
+  },
+  "functional_measurement": {
+    "assay_type": "DeltaG",
+    "wt_value": 0.0, "mutant_value": 2.1,
+    "value_unit": "kcal/mol",
+    "conditions": "Volpato et al. 2009, J Biol Chem 284(30):20079-89（PMC2740434 Table 2）",
+    "fold_change": 35.0,
+    "direction": "affinity_decrease",
+    "phenotype": "drug_resistance"
+  },
+  "provenance": {
+    "pmid": "19478082",
+    "doi": "",
+    "source_location": "Volpato et al. 2009, J Biol Chem 284(30):20079-89, PMC2740434 Table 2",
+    "quote_or_note": "Table 2：F31R 使 MTX 结合 ΔΔG = 2.1 kcal/mol（约 35 倍结合下降）。"
+  },
+  "mechanism": {
+    "conclusion": "Phe31 的苯环与 MTX 蝶啶环形成关键的芳香堆积/疏水锚定。F→R 移除了这一锚定，并引入带正电的柔性精氨酸侧链，导致 MTX 结合减弱 2.1 kcal/mol。",
+    "supporting_evidence": [
+      "文献：ΔΔG = 2.1 kcal/mol（PMID 19478082 Table 2，已核实）",
+      "结构：1U72 中 F31 侧链靠近 MTX 蝶啶环（平台可计算最近距离）"
+    ],
+    "conflicting_evidence": [],
+    "missing_evidence": [
+      "F31R 突变体结构（无）",
+      "芳香堆积丢失的逐原子证据（无突变结构无法计算）"
+    ]
+  },
+  "review": {
+    "status": "verified",
+    "reviewed_by": "2026-09-10 证据审计（docs/EVIDENCE-REVIEW.md）",
+    "review_date": "2026-09-10",
+    "notes": "ΔΔG 数值与来源已核实（PMC 开放全文）。"
+  },
+  "usage": {
+    "demo_ready": true,
+    "teaching_ready": true,
+    "quantitative_eval_ready": false
+  },
+  "teaching": {
+    "background": "在 DHFR-MTX 复合物中，Phe31 是 MTX 蝶啶环的“锚定”残基。本案例教学价值：①芳香性→带电残基的极端化学性质变化；②学习解读 ΔΔG（结合自由能变化）与 fold-Ki 的关系；③区分“能量值”与“机制证据”。",
+    "learning_objectives": [
+      "理解 ΔΔG（kcal/mol）与 Ki 倍数的换算关系（ΔΔG ≈ RT·ln(Ki_mut/Ki_wt)）",
+      "理解芳香性锚定对配体结合的贡献",
+      "学会不把“有 ΔΔG 数值”等同于“有机制验证”"
+    ],
+    "observation_tasks": [
+      "在 1U72 的 3D 视图中定位 Phe31 与 MTX 蝶啶环的相对位置",
+      "验证：2.1 kcal/mol 对应多少倍 Ki 变化？与文献的 35 倍是否一致？（RT≈0.6 kcal/mol at 300K，e^(2.1/0.6)≈33）",
+      "阅读平台的 LocalInteractionScore 输出，确认它不是 ΔΔG"
+    ],
+    "thinking_questions": [
+      "F→R 的电荷变化（0→+1）在结合口袋内通常有利还是不利？为什么？",
+      "为什么本案例的平台输出不能给出结构级因果图（无突变结构）？",
+      "ΔΔG 2.1 是“测量”还是“计算”？它来自哪个实验？"
+    ],
+    "stepwise_explanation": [
+      {"step": "物理参数层：F→R 芳香性消失、电荷 0→+1、形状改变", "evidence_status": "computed", "note": "通用侧链性质"},
+      {"step": "结构机制层：蝶啶环锚定接触丢失（推断）", "evidence_status": "hypothesis", "note": "基于 WT 结构位置 + 文献方向；无突变结构直接证据"},
+      {"step": "功能影响层：ΔΔG = 2.1 kcal/mol（≈35 倍结合下降）", "evidence_status": "fact", "note": "Volpato 2009 Table 2"}
+    ],
+    "facts": [
+      "F31R 使 MTX 结合 ΔΔG = 2.1 kcal/mol（PMID 19478082）",
+      "Phe31 在 WT 结构中靠近 MTX 蝶啶环",
+      "平台无 F31R 突变体结构"
+    ],
+    "computed_inferences": [
+      "WT 中 F31 与 MTX 的最近距离（平台可计算）",
+      "ΔΔG 与倍数的数学换算（学生可自行验证）"
+    ],
+    "hypotheses": [
+      "芳香堆积丢失是结合减弱的主因（文献方向，未逐原子验证）",
+      "精氨酸侧链的构象与溶剂化代价（无结构证据）"
+    ],
+    "run_instructions": "网页工作台：WT=examples/data/1u72.pdb，不选突变体文件，配体 MTX，突变 F31R，链 A。观察平台在无突变结构时的诚实输出。"
+  }
+}
