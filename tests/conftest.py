@@ -10,6 +10,28 @@ from psf_reasoner.schemas.inputs import (
     StructureInput,
 )
 
+# Environment variables that change which providers the default factories
+# wire in (LLM, cloud, persistence).  Tests must run the deterministic
+# local baseline regardless of the developer's shell environment —
+# otherwise the same test suite exercises completely different code paths
+# (and PSF_LLM=1 makes outputs non-reproducible between runs).
+_ISOLATED_ENV_VARS = (
+    "PSF_LLM",
+    "PSF_LLM_PROVIDER",
+    "DEEPSEEK_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "PSF_CLOUD_URL",
+    "PSF_CLOUD_SECRET",
+    "PSF_PERSIST",
+)
+
+
+@pytest.fixture(autouse=True)
+def isolate_provider_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Remove ambient provider env vars so tests run the local baseline."""
+    for name in _ISOLATED_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+
 
 @pytest.fixture
 def structure_file(tmp_path: Path) -> Path:

@@ -22,7 +22,10 @@ from psf_reasoner.physical.cloud_provider import CloudEvidenceProvider
 from psf_reasoner.physical.comparison import ComparativeEvidenceProvider
 from psf_reasoner.physical.coordinates import CoordinateEvidenceProvider
 from psf_reasoner.physical.energy import LocalEnergyEvidenceProvider
-from psf_reasoner.physical.modeling import LocalSideChainMutationModeler
+from psf_reasoner.physical.modeling import (
+    FoldXMutationModeler,
+    LocalSideChainMutationModeler,
+)
 from psf_reasoner.physical.pocket import PocketNetworkEvidenceProvider
 from psf_reasoner.reasoning.baseline import (
     BaselineConsistencyChecker,
@@ -73,7 +76,7 @@ def create_default_service(
         forward_reasoner=forward_reasoner,
         reverse_reasoner=reverse_reasoner,
         consistency_checker=consistency_checker,
-        mutation_modeler=LocalSideChainMutationModeler(),
+        mutation_modeler=_mutation_modeler(),
     )
 
 
@@ -111,6 +114,20 @@ def _cloud_adapter() -> HttpCloudAdapter | None:
     if not cloud_url:
         return None
     return HttpCloudAdapter(base_url=cloud_url)
+
+
+def _mutation_modeler():
+    """Select the mutation modeler.
+
+    Default: local side-chain truncation modeler (honest, deterministic).
+    With ``PSF_FOLDX=1``: FoldX BuildModel adapter — it detects whether a
+    ``foldx`` binary is available and falls back to the local modeler when
+    it is not.  No modelling claims are made beyond what the selected
+    engine actually computed.
+    """
+    if os.environ.get("PSF_FOLDX") == "1":
+        return FoldXMutationModeler()
+    return LocalSideChainMutationModeler()
 
 
 def _auto_llm_provider() -> LLMProvider | None:

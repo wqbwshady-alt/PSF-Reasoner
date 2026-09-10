@@ -1,5 +1,11 @@
 # PSF-Reasoner 项目全景 · 2026-07-21
 
+> **⚠ 数据可信度审计（2026-09-10）**：本文档中"118 个金案例"的表述已被独立
+> 文献核验推翻——原 golden_cases.py 的 118 条记录中 103 条引用了与声称无关的
+> PMID，50 条为配额填充的编造数据。当前已核实的案例见
+> `src/psf_reasoner/datasets/golden_cases.py`（ACCEPTED 条目）与
+> `docs/EVIDENCE-REVIEW.md`。本文档其余内容按 2026-07-21 快照保留。
+
 ## V1 — 工程管线（已完成）
 
 蛋白质结构解析 → 物理证据计算 → 基线推理 → FastAPI + CLI + 3Dmol.js 前端。
@@ -75,7 +81,7 @@
 - `datasets/deduplicator.py` — 去重 + 背景突变检查
 - `datasets/quality_control.py` — DatasetQCReport
 - `datasets/review_export.py` — CSV/JSON 审核导出
-- `datasets/golden_cases.py` — **118 个手动整理的金案例**
+- `datasets/golden_cases.py` — **案例库已按证据审计重建（见 banner）**
 - `datasets/expansion.py` — 数据集扩张审计
 - `calibration/build_feature_matrix.py` — 特征矩阵构建
 - `calibration/audit_features.py` — 数据审计（缺失率/分布/相关性）
@@ -84,7 +90,7 @@
 
 ### Identity Audit 核心结论
 - Protein-family-only baseline MCC = 0.000（已解除 confounding）
-- Identity-blinded MCC = 0.000（跨 8 家族 118 案例）
+- Identity-blinded MCC = 0.000（历史声明，已被审计推翻，见 docs/EVIDENCE-REVIEW.md）
 - Cross-family mean MCC = -0.052
 - **科学结论**：通用结构特征无法跨蛋白家族预测突变效应方向。正确方向应是家族内特异性预测。
 
@@ -168,7 +174,7 @@ docs/
 | ABL1 Kinase | 10 | 8 | 2 | 0 |
 | SARS-CoV-2 Mpro | 16 | 6 | 10 | 0 |
 | Influenza Neuraminidase | 13 | 5 | 8 | 0 |
-| **Total** | **118** | **45** | **62** | **11** |
+| **Total（历史）** | **118** | **45** | **62** | **11** — 2026-09-10 审计：103 条错误引用、50 条编造，全部降级 REJECTED |
 
 结构覆盖率：89%
 

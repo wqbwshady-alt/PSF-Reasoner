@@ -128,8 +128,8 @@ def _protein_features(matrix):
 def _ligand_features(matrix):
     """Ligand-only features."""
     samples, labels = [], []
-    from psf_reasoner.datasets.golden_cases import load_golden_cases
-    cases = {c.sample_id: c for c in load_golden_cases()}
+    from psf_reasoner.datasets.golden_cases import load_verified_cases
+    cases = {c.sample_id: c for c in load_verified_cases()}
     for s, l in zip(matrix.samples, matrix.labels):
         case = cases.get(s.sample_id)
         lid = case.ligand_id if case else "?"
@@ -144,8 +144,8 @@ def _ligand_features(matrix):
 
 def _protein_ligand_features(matrix):
     """Protein + ligand combined."""
-    from psf_reasoner.datasets.golden_cases import load_golden_cases
-    cases = {c.sample_id: c for c in load_golden_cases()}
+    from psf_reasoner.datasets.golden_cases import load_verified_cases
+    cases = {c.sample_id: c for c in load_verified_cases()}
     samples, labels = [], []
     for s, l in zip(matrix.samples, matrix.labels):
         case = cases.get(s.sample_id)

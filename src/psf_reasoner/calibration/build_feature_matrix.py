@@ -8,23 +8,17 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from math import isnan
 from pathlib import Path
-
-# Project root for resolving relative paths in golden cases
-_PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 
 from psf_reasoner.calibration.feature_schema import FeatureVector, extract_features
 from psf_reasoner.context.structural_context_builder import StructuralContextBuilder
-from psf_reasoner.datasets.golden_cases import load_golden_cases
+from psf_reasoner.datasets.golden_cases import load_verified_cases
 from psf_reasoner.datasets.schemas import EffectDirection, MutationLigandPair
 from psf_reasoner.knowledge.literature_evidence import get_evidence_summary
-from psf_reasoner.schemas.inputs import (
-    AnalysisRequest,
-    LigandSpec,
-    MutationSpec,
-    StructureInput,
-)
+from psf_reasoner.schemas.inputs import StructureInput
+
+# Project root for resolving relative paths in golden cases
+_PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 
 
 @dataclass
@@ -59,7 +53,7 @@ def build_feature_matrix(
     For cases without structures, creates a feature vector with only known properties.
     """
     if cases is None:
-        cases = load_golden_cases()
+        cases = load_verified_cases()
 
     matrix = FeatureMatrix()
     ctx_builder = StructuralContextBuilder()
@@ -83,10 +77,12 @@ def build_feature_matrix(
             matrix.split_groups.append(fv.split_group)
 
         except Exception as e:
-            matrix.build_errors.append({
-                "sample_id": case.sample_id,
-                "error": str(e),
-            })
+            matrix.build_errors.append(
+                {
+                    "sample_id": case.sample_id,
+                    "error": str(e),
+                }
+            )
 
     matrix.n_samples = len(matrix.samples)
     matrix.n_features = 23  # per FeatureVector.feature_names()
@@ -116,35 +112,27 @@ def _build_one(case: MutationLigandPair, ctx_builder: StructuralContextBuilder) 
             if not os.path.exists(wt_path):
                 raise FileNotFoundError(wt_path)
 
-            from psf_reasoner.physical.structure import StructureParser
-            from psf_reasoner.physical.geometry import atom_distance
-            from psf_reasoner.context.residue_role_annotator import classify_residue_role
             from psf_reasoner.context.ligand_fragmenter import decompose_ligand
+            from psf_reasoner.context.residue_role_annotator import classify_residue_role
+            from psf_reasoner.physical.geometry import atom_distance
+            from psf_reasoner.physical.structure import StructureParser
 
             parser = StructureParser()
             si = StructureInput(path=wt_path, format=fmt, model_index=0)
             wt_struct = parser.parse(si)
-            # Try to find the specified ligand; fall back to any non-standard residue
-            try:
-                wt_ligand = wt_struct.locate_ligand_by_identifier(case.ligand_id)
-            except ValueError:
-                # Find any ligand in the structure as fallback
-                std_aa = {'ALA','ARG','ASN','ASP','CYS','GLN','GLU','GLY','HIS','ILE','LEU','LYS','MET','PHE','PRO','SER','THR','TRP','TYR','VAL','HOH'}
-                for r in wt_struct.residues:
-                    rname = (r.identity.name if hasattr(r, 'identity') else getattr(r, 'name', '')).strip()
-                    if r.is_hetero and rname not in std_aa and len(rname) <= 3:
-                        wt_ligand = r
-                        break
-                else:
-                    raise ValueError(f"No ligand found in {case.wt_pdb}")
+            # The structure must contain the case's ligand.  No silent
+            # fallback to another molecule: a mismatched ligand (e.g. a DRV
+            # case whose WT structure binds MK1) raises, and the outer loop
+            # records the case as a build error instead of using it.
+            wt_ligand = wt_struct.locate_ligand_by_identifier(case.ligand_id)
 
             # Find mutation site residue in WT
             for residue in wt_struct.residues:
-                if residue.identity.number == (case.pdb_position or case.uniprot_position) and \
-                   (not case.pdb_chain or residue.identity.chain == case.pdb_chain):
+                if residue.identity.number == (case.pdb_position or case.uniprot_position) and (
+                    not case.pdb_chain or residue.identity.chain == case.pdb_chain
+                ):
                     # Single-structure features
-                    roles = classify_residue_role(residue, wt_ligand,
-                                                  protein_family_hint=protein_hint or "")
+                    roles = classify_residue_role(residue, wt_ligand, protein_family_hint=protein_hint or "")
                     ctx_ms = {
                         "residue_label": residue.identity.label,
                         "is_catalytic": "catalytic" in [r.value for r in roles],
@@ -153,18 +141,22 @@ def _build_one(case: MutationLigandPair, ctx_builder: StructuralContextBuilder) 
                         "roles": [r.value for r in roles],
                     }
                     # Nearest ligand distance
-                    res_atoms = [a for a in residue.atoms if a.element not in {"D","H"}]
-                    lig_atoms = [a for a in wt_ligand.atoms if a.element not in {"D","H"}]
+                    res_atoms = [a for a in residue.atoms if a.element not in {"D", "H"}]
+                    lig_atoms = [a for a in wt_ligand.atoms if a.element not in {"D", "H"}]
                     if res_atoms and lig_atoms:
-                        ctx_ms["nearest_ligand_distance"] = round(min(
-                            atom_distance(ra, la) for ra in res_atoms for la in lig_atoms
-                        ), 3)
+                        ctx_ms["nearest_ligand_distance"] = round(
+                            min(atom_distance(ra, la) for ra in res_atoms for la in lig_atoms), 3
+                        )
                     # 4A neighborhood
                     ctx_ms["neighborhood_4a"] = []
                     for other in wt_struct.residues:
-                        if other.is_hetero or other.is_water or other.identity.label == residue.identity.label:
+                        if (
+                            other.is_hetero
+                            or other.is_water
+                            or other.identity.label == residue.identity.label
+                        ):
                             continue
-                        oa = [a for a in other.atoms if a.element not in {"D","H"}]
+                        oa = [a for a in other.atoms if a.element not in {"D", "H"}]
                         if oa and res_atoms:
                             md = min(atom_distance(ra, o) for ra in res_atoms for o in oa)
                             if md <= 4.0:
@@ -183,7 +175,13 @@ def _build_one(case: MutationLigandPair, ctx_builder: StructuralContextBuilder) 
                 "fragments": [{"id": f.fragment_id, "description": f.description} for f in decomp.fragments],
             }
         except Exception as e:
-            pass  # structure not available or parse error — leave features empty
+            # Structure unavailable, unparseable, or ligand mismatch: surface
+            # the reason to the caller instead of silently using empty
+            # features.  The outer loop records it as a build error.
+            raise ValueError(
+                f"{case.sample_id}: structure features unavailable "
+                f"({case.wt_pdb}, ligand {case.ligand_id}): {e}"
+            ) from e
 
     fv = extract_features(
         sample_id=case.sample_id,
@@ -196,9 +194,9 @@ def _build_one(case: MutationLigandPair, ctx_builder: StructuralContextBuilder) 
         label_type=case.assay_type.value,
     )
 
-    # Override with known values from golden case
-    if case.delta_delta_g is not None:
-        fv.f_volume_delta = float(case.delta_delta_g)  # use ΔΔG as strong signal
+    # NOTE: experimental ΔΔG (case.delta_delta_g) must NOT be written into
+    # any feature — it is the experimental outcome, and using it as an input
+    # feature would leak the label into the training signal.
     fv.f_neighborhood_4a_count = n4a
     fv.f_pocket_catalytic_in_4a = catalytic_4a
     fv.f_is_catalytic = 1 if case.is_catalytic_site else fv.f_is_catalytic

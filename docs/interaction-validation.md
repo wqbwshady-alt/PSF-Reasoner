@@ -114,7 +114,7 @@ for a in result.by_type:
 "
 ```
 
-### 1SDV (L90M + MK1)
+### 1SDV (V82A + MK1)
 
 | Interaction Type | PSF Count | PLIP Count | Notes |
 |-----------------|-----------|------------|-------|
@@ -131,7 +131,7 @@ at the dimer interface compensates for minor contact losses.
 
 ### Cross-Structure Consistency
 
-| Metric | 1SDT (WT) | 1SDV (L90M) |
+| Metric | 1SDT (WT) | 1SDV (V82A) |
 |--------|-----------|--------------|
 | PSF H-bonds | 2 | 2 |
 | PLIP H-bonds | 5 | 4 |
@@ -150,7 +150,10 @@ suggesting systematic rather than random differences.
 
 - PLIP: Adasme et al. (2021) "PLIP 2021: expanding the scope of the
   protein–ligand interaction profiler to DNA and RNA." Nucleic Acids Res.
-  49(W1):W530–W534. PMID: 33950225
+  49(W1):W530–W534. PMID: 33950214
 - 1SDT/1SDU/1SDV: Mahalingam et al. (2004) "Crystal structures of HIV
   protease V82A and L90M mutants reveal changes in the indinavir-binding
   site." Eur. J. Biochem. 271:1516–1524. PMID: 15066177
+
+
+> **AUDIT 2026-09-10**: 本文此前将 1SDV 描述为 L90M，实际 1SDV 是 V82A （与 1SDT 仅第 82 位 V→A 不同）；L90M 结构是 1SDU。PLIP 引用 PMID 已更正为 33950214。

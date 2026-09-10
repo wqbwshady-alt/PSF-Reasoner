@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="/client/styles.css?v=v4c" />
+<link rel="stylesheet" href="/client/styles.css?v=v5a" />
 <script src="https://3Dmol.org/build/3Dmol-min.js"></script>
 </head>
 <body>
@@ -34,48 +34,50 @@
       </div>
     </div>
 
-    <div class="sidebar-section">
-      <h2>结构文件</h2>
-      <label class="file-input">
-        <span>参考结构 (WT)</span>
-        <input id="reference-file" type="file" accept=".pdb,.cif,.mmcif" />
-      </label>
-      <label class="file-input" id="mutant-file-group">
-        <span>突变体结构</span>
-        <input id="mutant-file" type="file" accept=".pdb,.cif,.mmcif" />
-      </label>
-    </div>
+    <form id="analysis-form">
+      <div class="sidebar-section">
+        <h2>结构文件</h2>
+        <label class="file-input">
+          <span>参考结构 (WT)</span>
+          <input id="reference-file" name="reference_file" type="file" accept=".pdb,.cif,.mmcif" />
+        </label>
+        <label class="file-input" id="mutant-file-group">
+          <span>突变体结构（可选）</span>
+          <input id="mutant-file" name="mutant_file" type="file" accept=".pdb,.cif,.mmcif" />
+        </label>
+      </div>
 
-    <div class="sidebar-section" id="mutation-fields">
-      <h2>分析参数</h2>
-      <label class="field">
-        <span>配体 ID</span>
-        <input id="ligand" value="MK1" autocomplete="off" />
-      </label>
-      <label class="field">
-        <span>突变</span>
-        <input id="mutation" value="V82A" autocomplete="off" />
-      </label>
-      <label class="field" id="chain-group">
-        <span>链</span>
-        <input id="chain" value="A" autocomplete="off" />
-      </label>
-      <label class="field" id="phenotype-group">
-        <span>表型</span>
-        <select id="phenotype">
-          <option value="drug_resistance">耐药性</option>
-          <option value="activity_loss">活性丧失</option>
-          <option value="stability_change">稳定性变化</option>
-        </select>
-      </label>
-    </div>
+      <div class="sidebar-section" id="mutation-fields">
+        <h2>分析参数</h2>
+        <label class="field">
+          <span>配体 ID</span>
+          <input id="ligand" name="ligand" value="MK1" autocomplete="off" />
+        </label>
+        <label class="field">
+          <span>突变（如 V82A）</span>
+          <input id="mutation" name="mutation" value="V82A" autocomplete="off" />
+        </label>
+        <label class="field" id="chain-group">
+          <span>链</span>
+          <input id="chain" name="chain" value="A" autocomplete="off" />
+        </label>
+        <label class="field" id="phenotype-group">
+          <span>表型</span>
+          <select id="phenotype" name="phenotype">
+            <option value="drug_resistance">耐药性</option>
+            <option value="activity_loss">活性丧失</option>
+            <option value="stability_change">稳定性变化</option>
+          </select>
+        </label>
+      </div>
 
-    <div class="sidebar-actions">
-      <button class="btn-primary" id="submit-analysis">开始分析</button>
-      <button class="btn-ghost" id="run-example">V82A 示例</button>
-      <button class="btn-ghost" id="run-v3-example" style="font-family:monospace;font-size:0.75rem">V3 因果推理</button>
-    </div>
-    <p class="sidebar-note">文件仅在本地处理</p>
+      <div class="sidebar-actions">
+        <button type="submit" class="btn-primary" id="submit-analysis">开始分析</button>
+        <button type="button" class="btn-ghost" id="run-example">V82A 示例（配对结构）</button>
+        <button type="button" class="btn-ghost" id="run-v3-example" style="font-family:monospace;font-size:0.75rem">V82A 因果推理</button>
+      </div>
+    </form>
+    <p class="sidebar-note">上传文件将保存在服务端 uploads 目录（会话级），导出文件从当前会话的报告生成</p>
   </aside>
 
   <!-- Main -->
@@ -118,11 +120,11 @@
     <div class="empty-state" id="empty-state">
       <div class="empty-icon">🧬</div>
       <h1>蛋白质结构机制推理平台</h1>
-      <p>上传野生型和突变体结构文件，或点击示例按钮开始分析。<br/>支持单点突变的物理证据计算、机制推理与因果图生成。</p>
+      <p>上传野生型和突变体结构文件，输入配体与单点突变，<br/>获得可追溯的物理证据、竞争机制因果图与三维证据定位。</p>
       <div class="empty-cards">
-        <div class="empty-card"><strong>任意蛋白</strong><span>PDB / mmCIF 格式</span></div>
+        <div class="empty-card"><strong>配对结构</strong><span>WT + 突变体 PDB / mmCIF</span></div>
         <div class="empty-card"><strong>12 类证据</strong><span>距离 · 接触 · SASA · 氢键 · 疏水 · 盐桥 · π · 水桥</span></div>
-        <div class="empty-card"><strong>因果推理</strong><span>竞争机制图 · 文献证据 · 校准预测</span></div>
+        <div class="empty-card"><strong>因果推理</strong><span>竞争机制图 · 文献证据 · 启发式评分（未校准）</span></div>
       </div>
     </div>
 
@@ -145,6 +147,6 @@
   <div class="viewer-container" id="viewer-3d"></div>
 </div>
 
-<script src="/client/app.js?v=v4g"></script>
+<script src="/client/app.js?v=v5c"></script>
 </body>
 </html>

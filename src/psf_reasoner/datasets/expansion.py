@@ -1,185 +1,117 @@
-"""Dataset Expansion V2 — systematic expansion to 100+ family-balanced cases."""
+"""Dataset inventory audit (replaces the quota-based expansion plan).
+
+Earlier versions of this module framed dataset growth as quota targets
+("decrease>=4, neutral>=4, increase>=4 per family").  That framing produced
+the fabricated bulk-fill rows documented in docs/EVIDENCE-REVIEW.md and is
+deliberately removed.
+
+What remains is an inventory: how many verified / pending / rejected cases
+exist per family, so curation effort can be directed at re-verifying
+rejected families instead of generating more rows.
+"""
 
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass, field
 
 from psf_reasoner.datasets.golden_cases import load_golden_cases
-from psf_reasoner.datasets.schemas import EffectDirection
 
 
 @dataclass
-class ExpansionStatus:
+class InventoryStatus:
     total: int = 0
-    target: int = 100
+    verified: int = 0
+    pending: int = 0
+    rejected: int = 0
     families: dict[str, dict] = field(default_factory=dict)
-    family_label_matrix: dict = field(default_factory=dict)
-    ligand_label_matrix: dict = field(default_factory=dict)
-    structure_coverage: float = 0.0
-    contact_coverage: float = 0.0
-    can_evaluate_within_family: int = 0
-    total_families: int = 0
+    has_structure_pair: int = 0
 
     def summary(self) -> str:
         lines = [
-            f"Expansion Status: {self.total}/{self.target} cases",
-            f"Families with ≥2 label directions: {self.can_evaluate_within_family}/{self.total_families}",
-            f"Structure coverage: {self.structure_coverage:.0%}",
-            f"Contact coverage: {self.contact_coverage:.0%}",
-            f"",
-            f"Family × Label Matrix:",
+            f"Inventory: {self.total} cases "
+            f"({self.verified} verified, {self.pending} pending, {self.rejected} rejected)",
+            f"Structure pairs: {self.has_structure_pair}",
+            "",
+            "Per family (verified/pending/rejected):",
         ]
-        for fam in sorted(self.family_label_matrix):
-            labels = self.family_label_matrix[fam]
-            parts = [f"  {fam}:"]
-            for d in ["decrease", "neutral", "increase"]:
-                count = labels.get(d, 0)
-                status = "✅" if count >= 4 else ("⚠" if count >= 1 else "❌")
-                parts.append(f"{status}{d}={count}")
-            lines.append(" ".join(parts))
+        for fam in sorted(self.families):
+            v = self.families[fam]
+            lines.append(f"  {fam}: {v['accepted']}/{v['pending']}/{v['rejected']}")
         return "\n".join(lines)
 
 
-def audit_expansion() -> ExpansionStatus:
-    """Audit current expansion state and identify gaps."""
+def audit_expansion() -> InventoryStatus:
+    """Audit the case inventory by review status."""
     cases = load_golden_cases()
-    status = ExpansionStatus(
-        total=len(cases),
-        target=150,
-    )
-
-    # Family × Label matrix
-    matrix: dict[str, dict[str, int]] = {}
-    ligand_matrix: dict[str, dict[str, int]] = {}
-    struct_count = 0
-    contact_count = 0
-
+    status = InventoryStatus(total=len(cases))
     for c in cases:
-        fam = c.protein_name or c.split_group
-        direction = c.effect_direction.value
-        if "neutral" in direction:
-            direction = "neutral"
-        if direction not in ("decrease", "neutral", "increase"):
-            direction = "decrease" if "decrease" in direction else "increase"
-
-        if fam not in matrix:
-            matrix[fam] = {"decrease": 0, "neutral": 0, "increase": 0}
-        matrix[fam][direction] = matrix[fam].get(direction, 0) + 1
-
-        lig = c.ligand_id
-        if lig not in ligand_matrix:
-            ligand_matrix[lig] = {"decrease": 0, "neutral": 0, "increase": 0}
-        ligand_matrix[lig][direction] = ligand_matrix[lig].get(direction, 0) + 1
-
-        if c.wt_pdb:
-            struct_count += 1
-        if c.has_structure_pair:
-            contact_count += 1
-
-    # Build per-family targets
-    families = {}
-    for fam, dirs in matrix.items():
-        can_eval = sum(1 for d in dirs.values() if d > 0)
-        deficit_decrease = max(0, 4 - dirs.get("decrease", 0))
-        deficit_neutral = max(0, 4 - dirs.get("neutral", 0))
-        deficit_increase = max(0, 4 - dirs.get("increase", 0))
-        families[fam] = {
-            "total": sum(dirs.values()),
-            "can_evaluate": can_eval >= 2,
-            "deficits": {
-                "decrease": deficit_decrease,
-                "neutral": deficit_neutral,
-                "increase": deficit_increase,
-            },
-        }
-
-    status.families = families
-    status.family_label_matrix = matrix
-    status.ligand_label_matrix = dict(ligand_matrix)
-    status.structure_coverage = struct_count / max(len(cases), 1)
-    status.contact_coverage = contact_count / max(len(cases), 1)
-    status.can_evaluate_within_family = sum(1 for f in families.values() if f["can_evaluate"])
-    status.total_families = len(families)
-
+        fam = c.protein_name or c.split_group or "unknown"
+        entry = status.families.setdefault(fam, {"accepted": 0, "pending": 0, "rejected": 0})
+        if c.review_status.value == "accepted":
+            status.verified += 1
+            entry["accepted"] += 1
+        elif c.review_status.value == "pending":
+            status.pending += 1
+            entry["pending"] += 1
+        else:
+            status.rejected += 1
+            entry["rejected"] += 1
+        if c.wt_pdb and c.mutant_pdb:
+            status.has_structure_pair += 1
     return status
 
 
 def get_expansion_priority() -> list[dict]:
-    """Return priority-ordered list of what to collect next."""
+    """Return curation priorities: families with zero verified cases first.
+
+    The priority is RE-VERIFICATION of excluded families (find the real
+    literature), never the generation of new rows to fill a matrix.
+    """
     status = audit_expansion()
     priorities = []
-
     for fam, info in status.families.items():
-        for direction, deficit in info["deficits"].items():
-            if deficit > 0:
-                priorities.append({
-                    "family": fam,
-                    "direction_needed": direction,
-                    "deficit": deficit,
-                    "priority": "HIGH" if deficit >= 3 else "MEDIUM" if deficit >= 1 else "LOW",
-                })
-
-    # Sort: high deficit first, then by family
-    priorities.sort(key=lambda x: (-x["deficit"], x["family"]))
+        priorities.append(
+            {
+                "family": fam,
+                "verified": info["accepted"],
+                "pending": info["pending"],
+                "rejected": info["rejected"],
+                "priority": "HIGH" if info["accepted"] == 0 else "LOW",
+            }
+        )
+    priorities.sort(key=lambda x: -x["rejected"])
     return priorities
 
 
 def generate_expansion_plan() -> str:
-    """Generate a markdown expansion plan."""
+    """Generate a curation plan that re-verifies, never fabricates."""
     status = audit_expansion()
     priorities = get_expansion_priority()
-
     lines = [
-        f"# Dataset Expansion V2 Plan",
-        f"",
-        f"Current: {status.total} cases | Target: {status.target} cases",
-        f"Structure coverage: {status.structure_coverage:.0%} | Contact: {status.contact_coverage:.0%}",
-        f"",
-        f"## Priority Collection Targets",
-        f"",
-        f"| Family | Direction Needed | Deficit | Priority |",
-        f"|--------|-----------------|---------|----------|",
+        "# Dataset Curation Plan (evidence-first)",
+        "",
+        f"Current: {status.total} cases | verified {status.verified} | "
+        f"pending {status.pending} | rejected {status.rejected}",
+        "",
+        "## Priority: re-verify rejected families against real literature",
+        "",
+        "| Family | Verified | Pending | Rejected | Priority |",
+        "|--------|----------|---------|----------|----------|",
     ]
     for p in priorities[:15]:
-        lines.append(f"| {p['family']} | {p['direction_needed']} | {p['deficit']} | {p['priority']} |")
-
+        lines.append(
+            f"| {p['family']} | {p['verified']} | {p['pending']} | {p['rejected']} | {p['priority']} |"
+        )
     lines += [
-        f"",
-        f"## Family × Label Matrix",
-        f"",
+        "",
+        "## Rules",
+        "",
+        "- Every numeric value must be traceable to a table/figure in the cited paper.",
+        "- Every structure must actually contain the assay ligand.",
+        "- No quota targets.  A family with one verified case is better than a",
+        "  family with twenty fabricated ones.",
+        "",
+        "See docs/EVIDENCE-REVIEW.md for the full audit and the human-review",
+        "checklist (paywalled full-text items).",
     ]
-    for fam in sorted(status.family_label_matrix):
-        labels = status.family_label_matrix[fam]
-        parts = [f"**{fam}**: decrease={labels.get('decrease',0)}, neutral={labels.get('neutral',0)}, increase={labels.get('increase',0)}"]
-        lines.append("  " + " · ".join(parts))
-
-    lines += [
-        f"",
-        f"## Quota Targets (per family)",
-        f"Each family: decrease≥4, neutral≥4, increase≥4",
-        f"",
-    ]
-    for fam, info in sorted(status.families.items()):
-        d = info["deficits"]
-        total_deficit = sum(d.values())
-        if total_deficit > 0:
-            targets = [f"{dir_}: need {n} more" for dir_, n in d.items() if n > 0]
-            lines.append(f"- **{fam}**: {', '.join(targets)}")
-        else:
-            lines.append(f"- **{fam}**: ✅ quota met")
-
-    lines += [
-        f"",
-        f"## New Families to Add (recommended)",
-        f"",
-        f"- Trypsin + Benzamidine (serine protease, well-characterized)",
-        f"- SARS-CoV-2 Mpro + Nirmatrelvir (cysteine protease, clinical relevance)",
-        f"- Influenza Neuraminidase + Oseltamivir (clinical resistance, many structures)",
-        f"- Carbonic Anhydrase + sulfonamide inhibitors (simple, many mutants)",
-        f"- Ricin A-chain + small molecule inhibitors",
-        f"",
-        f"Each new family should contribute 12-20 cases with ≥2 label directions.",
-    ]
-
     return "\n".join(lines)

@@ -1,15 +1,22 @@
-"""Golden 30 curated mutation–ligand pairs (V3 data pipeline).
+"""Curated mutation–ligand cases (V3 data pipeline) — evidence-audited.
 
-These are manually curated cases with known experimental values from
-peer-reviewed literature.  Every entry has been verified for:
-- Correct protein identity and organism
-- Correct residue numbering (UniProt ↔ PDB mapping)
-- Same ligand in WT and mutant measurements
-- Same assay type and compatible conditions
-- No unaccounted background mutations in the PDB structures used
+Previous revisions of this module claimed "118 verified golden cases".
+An independent literature audit (docs/EVIDENCE-REVIEW.md, 2026-09-10)
+found that 103/118 entries cited PMIDs unrelated to their claims and that
+50 entries were quota-filling bulk rows with fabricated fold values.
 
-This is the seed dataset for calibration.  It is deliberately small and
-high-quality rather than large and noisy.
+This revision contains ONLY:
+
+- ``review_status=ACCEPTED`` — cases whose PMID, direction, and (where
+  present) numeric value were verified against the cited literature.
+- ``review_status=PENDING`` — cases with a legitimate source whose exact
+  numeric value still needs full-text verification.
+- ``review_status=REJECTED`` — everything else, kept here with an explicit
+  ``rejection_reason`` so the audit trail is preserved and no downstream
+  consumer can silently reuse contaminated data.
+
+Training/evaluation code must use ``load_verified_cases()`` (ACCEPTED only).
+``load_golden_cases()`` returns the full inventory for auditing.
 """
 
 from __future__ import annotations
@@ -22,881 +29,847 @@ from psf_reasoner.datasets.schemas import (
     ReviewStatus,
 )
 
+_HIV = "HIV-1 Protease"
+_HIV_ACC = "P03367"
+_DHFR = "Human Dihydrofolate Reductase"
+_DHFR_ACC = "P00374"
+_EGFR = "EGFR Kinase"
+_EGFR_ACC = "P00533"
+_ABL = "ABL1 Kinase"
+_ABL_ACC = "P00519"
+_BLAC = "TEM-1 Beta-lactamase"
+_BLAC_ACC = "P62593"
+_TRYP = "Bovine Trypsin"
+_TRYP_ACC = "P00760"
+_MPRO = "SARS-CoV-2 Mpro"
+_MPRO_ACC = "P0DTD1"
+_NEUR = "Influenza Neuraminidase"
+_NEUR_ACC = "P03468"
+
+
+def _case(
+    sample_id: str,
+    accession: str,
+    protein_name: str,
+    organism: str,
+    notation: str,
+    position: int,
+    ligand_id: str,
+    ligand_name: str,
+    *,
+    assay_type: AssayType,
+    wt_value: float | None = None,
+    mutant_value: float | None = None,
+    value_unit: str = "",
+    effect_direction: EffectDirection = EffectDirection.UNKNOWN,
+    wt_pdb: str = "",
+    mutant_pdb: str = "",
+    background_mutations: list[str] | None = None,
+    pmid: str = "",
+    doi: str = "",
+    review_status: ReviewStatus = ReviewStatus.PENDING,
+    review_notes: str = "",
+    rejection_reason: str = "",
+    data_quality: DataQuality = DataQuality.UNVERIFIED,
+    experimental_method: str = "",
+    chain: str = "A",
+    delta_delta_g: float | None = None,
+) -> MutationLigandPair:
+    wt, _, mut = notation.partition("X")
+    if not mut:  # "V82A" notation
+        wt, mut = notation[0], notation[-1]
+    return MutationLigandPair(
+        sample_id=sample_id,
+        protein_accession=accession,
+        protein_name=protein_name,
+        organism=organism,
+        mutation_notation=notation,
+        wt_residue=wt,
+        mutant_residue=mut,
+        uniprot_position=position,
+        pdb_position=position,
+        pdb_chain=chain,
+        ligand_id=ligand_id,
+        ligand_name=ligand_name,
+        ligand_role="inhibitor",
+        assay_type=assay_type,
+        wt_value=wt_value,
+        mutant_value=mutant_value,
+        value_unit=value_unit,
+        delta_delta_g=delta_delta_g,
+        effect_direction=effect_direction,
+        wt_pdb=wt_pdb,
+        mutant_pdb=mutant_pdb,
+        background_mutations=background_mutations or [],
+        has_structure_pair=bool(wt_pdb and mutant_pdb),
+        experimental_method=experimental_method,
+        pmid=pmid,
+        doi=doi,
+        data_source="manual_curation",
+        data_quality=data_quality,
+        review_status=review_status,
+        review_notes=review_notes,
+        rejection_reason=rejection_reason,
+        split_group=accession,
+    )
+
 
 def load_golden_cases() -> list[MutationLigandPair]:
-    """Return the 30 golden cases for calibration pilot."""
-    cases: list[MutationLigandPair] = []
+    """Return the full case inventory: verified + pending + rejected.
 
-    # =====================================================================
-    # HIV-1 Protease (P03367) — 10 cases
-    # =====================================================================
+    Use ``load_verified_cases()`` for training/evaluation data.
+    """
+    return [*_verified(), *_pending(), *_rejected()]
 
-    _hiv = lambda: "HIV-1 Protease"
-    _hiv_acc = "P03367"
 
-    cases.append(MutationLigandPair(
-        sample_id="HIV_V82A_MK1",
-        protein_accession=_hiv_acc, protein_name=_hiv(), organism="HIV-1",
-        mutation_notation="V82A", wt_residue="V", mutant_residue="A",
-        uniprot_position=82, pdb_position=82, pdb_chain="A",
-        ligand_id="MK1", ligand_name="MK1 (hydroxyethylene isostere)", ligand_role="inhibitor",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=5.0, value_unit="fold_Ki",
-        effect_direction=EffectDirection.AFFINITY_DECREASE,
-        wt_pdb="1sdt.cif", mutant_pdb="1sdv.cif",
-        has_structure_pair=True, has_computed_features=True,
-        experimental_method="in vitro purified enzyme",
-        pmid="2548654", data_source="manual_curation",
-        data_quality=DataQuality.CURATED, review_status=ReviewStatus.ACCEPTED,
-        split_group=_hiv_acc,
-    ))
+def load_verified_cases() -> list[MutationLigandPair]:
+    """Return only cases whose source, direction, and values were verified."""
+    return [c for c in load_golden_cases() if c.review_status == ReviewStatus.ACCEPTED]
 
-    # HIV-1 protease: all share WT reference 1sdt (MK1, 1.3Å)
-    # Most inhibitor-specific mutant structures don't exist in PDB;
-    # we use 1sdt as the common WT anchor and note when mutant structures are available.
-    _hiv_wt = ("1sdt.cif", "1sdv.cif")  # WT, V82A mutant (both with MK1)
 
-    cases.append(MutationLigandPair(
-        sample_id="HIV_V82A_DRV",
-        protein_accession=_hiv_acc, protein_name=_hiv(), organism="HIV-1",
-        mutation_notation="V82A", wt_residue="V", mutant_residue="A",
-        uniprot_position=82, pdb_position=82, pdb_chain="A",
-        ligand_id="DRV", ligand_name="Darunavir", ligand_role="inhibitor",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=5.0, value_unit="fold_Ki",
-        effect_direction=EffectDirection.AFFINITY_DECREASE,
-        wt_pdb="1sdt.cif", mutant_pdb=_hiv_wt[1], has_structure_pair=True,
-        review_notes="WT structure: 1sdt (MK1, not DRV). Mutant: 1sdv (V82A/MK1). Ligand differs from assay ligand.",
-        experimental_method="in vitro purified enzyme",
-        pmid="12730686", data_source="manual_curation",
-        data_quality=DataQuality.CURATED, review_status=ReviewStatus.ACCEPTED,
-        split_group=_hiv_acc,
-    ))
+# ===========================================================================
+# Verified cases (ACCEPTED) — every PMID/DOI/direction verified on 2026-09-10
+# ===========================================================================
 
-    cases.append(MutationLigandPair(
-        sample_id="HIV_I84V_DRV",
-        protein_accession=_hiv_acc, protein_name=_hiv(), organism="HIV-1",
-        mutation_notation="I84V", wt_residue="I", mutant_residue="V",
-        uniprot_position=84, pdb_position=84, pdb_chain="A",
-        ligand_id="DRV", ligand_name="Darunavir", ligand_role="inhibitor",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=8.0, value_unit="fold_Ki",
-        effect_direction=EffectDirection.AFFINITY_DECREASE,
-        wt_pdb="1sdt.cif", review_notes="WT reference only (1sdt/MK1). No I84V mutant structure available.",
-        experimental_method="in vitro purified enzyme",
-        pmid="15632378", data_source="manual_curation",
-        data_quality=DataQuality.CURATED, review_status=ReviewStatus.ACCEPTED,
-        split_group=_hiv_acc,
-    ))
 
-    cases.append(MutationLigandPair(
-        sample_id="HIV_I50V_APV",
-        protein_accession=_hiv_acc, protein_name=_hiv(), organism="HIV-1",
-        mutation_notation="I50V", wt_residue="I", mutant_residue="V",
-        uniprot_position=50, pdb_position=50, pdb_chain="A",
-        ligand_id="APV", ligand_name="Amprenavir", ligand_role="inhibitor",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=20.0, value_unit="fold_Ki",
-        effect_direction=EffectDirection.AFFINITY_DECREASE,
-        wt_pdb="1sdt.cif", review_notes="WT reference only (1sdt/MK1). No I50V/APV structure available.",
-        experimental_method="in vitro purified enzyme",
-        pmid="10681379", data_source="manual_curation",
-        data_quality=DataQuality.CURATED, review_status=ReviewStatus.ACCEPTED,
-        split_group=_hiv_acc,
-    ))
-
-    cases.append(MutationLigandPair(
-        sample_id="HIV_D30N_NFV",
-        protein_accession=_hiv_acc, protein_name=_hiv(), organism="HIV-1",
-        mutation_notation="D30N", wt_residue="D", mutant_residue="N",
-        uniprot_position=30, pdb_position=30, pdb_chain="A",
-        ligand_id="NFV", ligand_name="Nelfinavir", ligand_role="inhibitor",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=15.0, value_unit="fold_Ki",
-        effect_direction=EffectDirection.AFFINITY_DECREASE,
-        wt_pdb="1sdt.cif", review_notes="WT reference only (1sdt/MK1). No D30N/NFV structure available.",
-        experimental_method="in vitro purified enzyme",
-        pmid="9149701", data_source="manual_curation",
-        data_quality=DataQuality.CURATED, review_status=ReviewStatus.ACCEPTED,
-        split_group=_hiv_acc,
-    ))
-
-    cases.append(MutationLigandPair(
-        sample_id="HIV_G48V_SQV",
-        protein_accession=_hiv_acc, protein_name=_hiv(), organism="HIV-1",
-        mutation_notation="G48V", wt_residue="G", mutant_residue="V",
-        uniprot_position=48, pdb_position=48, pdb_chain="A",
-        ligand_id="SQV", ligand_name="Saquinavir", ligand_role="inhibitor",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=13.0, value_unit="fold_Ki",
-        effect_direction=EffectDirection.AFFINITY_DECREASE,
-        wt_pdb="1sdt.cif", review_notes="WT reference only (1sdt/MK1). No G48V/SQV structure available.",
-        experimental_method="in vitro purified enzyme",
-        pmid="7540751", data_source="manual_curation",
-        data_quality=DataQuality.CURATED, review_status=ReviewStatus.ACCEPTED,
-        split_group=_hiv_acc,
-    ))
-
-    cases.append(MutationLigandPair(
-        sample_id="HIV_L90M_SQV",
-        protein_accession=_hiv_acc, protein_name=_hiv(), organism="HIV-1",
-        mutation_notation="L90M", wt_residue="L", mutant_residue="M",
-        uniprot_position=90, pdb_position=90, pdb_chain="A",
-        ligand_id="SQV", ligand_name="Saquinavir", ligand_role="inhibitor",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=7.0, value_unit="fold_Ki",
-        effect_direction=EffectDirection.AFFINITY_DECREASE,
-        wt_pdb="1sdt.cif", review_notes="WT reference only (1sdt/MK1). No L90M/SQV structure available.",
-        experimental_method="in vitro purified enzyme",
-        pmid="7540751", data_source="manual_curation",
-        data_quality=DataQuality.CURATED, review_status=ReviewStatus.ACCEPTED,
-        split_group=_hiv_acc,
-    ))
-
-    cases.append(MutationLigandPair(
-        sample_id="HIV_I54V_IDV",
-        protein_accession=_hiv_acc, protein_name=_hiv(), organism="HIV-1",
-        mutation_notation="I54V", wt_residue="I", mutant_residue="V",
-        uniprot_position=54, pdb_position=54, pdb_chain="A",
-        ligand_id="IDV", ligand_name="Indinavir", ligand_role="inhibitor",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=6.0, value_unit="fold_Ki",
-        effect_direction=EffectDirection.AFFINITY_DECREASE,
-        wt_pdb="1sdt.cif", review_notes="WT reference only (1sdt/MK1). No I54V/IDV structure available.",
-        experimental_method="in vitro purified enzyme",
-        pmid="8810284", data_source="manual_curation",
-        data_quality=DataQuality.CURATED, review_status=ReviewStatus.ACCEPTED,
-        split_group=_hiv_acc,
-    ))
-
-    cases.append(MutationLigandPair(
-        sample_id="HIV_I54M_IDV",
-        protein_accession=_hiv_acc, protein_name=_hiv(), organism="HIV-1",
-        mutation_notation="I54M", wt_residue="I", mutant_residue="M",
-        uniprot_position=54, pdb_position=54, pdb_chain="A",
-        ligand_id="IDV", ligand_name="Indinavir", ligand_role="inhibitor",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=12.0, value_unit="fold_Ki",
-        effect_direction=EffectDirection.AFFINITY_DECREASE,
-        wt_pdb="1sdt.cif", review_notes="WT reference only (1sdt/MK1). No I54M/IDV structure available.",
-        experimental_method="in vitro purified enzyme",
-        pmid="8810284", data_source="manual_curation",
-        data_quality=DataQuality.CURATED, review_status=ReviewStatus.ACCEPTED,
-        split_group=_hiv_acc,
-    ))
-
-    cases.append(MutationLigandPair(
-        sample_id="HIV_V32I_IDV",
-        protein_accession=_hiv_acc, protein_name=_hiv(), organism="HIV-1",
-        mutation_notation="V32I", wt_residue="V", mutant_residue="I",
-        uniprot_position=32, pdb_position=32, pdb_chain="A",
-        ligand_id="IDV", ligand_name="Indinavir", ligand_role="inhibitor",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=3.0, value_unit="fold_Ki",
-        effect_direction=EffectDirection.AFFINITY_DECREASE,
-        wt_pdb="1sdt.cif", review_notes="WT reference only (1sdt/MK1). No V32I/IDV structure available.",
-        experimental_method="in vitro purified enzyme",
-        pmid="8810284", data_source="manual_curation",
-        data_quality=DataQuality.CURATED, review_status=ReviewStatus.ACCEPTED,
-        split_group=_hiv_acc,
-    ))
-
-    # =====================================================================
-    # Human DHFR (P00374) — 5 cases
-    # =====================================================================
-
-    _dhfr = lambda: "Human Dihydrofolate Reductase"
-    _dhfr_acc = "P00374"
-
-    # DHFR: WT reference 1u72 (MTX, 1.9Å)
-    _dhfr_wt = "1u72.pdb"
-
-    cases.append(MutationLigandPair(
-        sample_id="DHFR_L22F_MTX",
-        protein_accession=_dhfr_acc, protein_name=_dhfr(), organism="Homo sapiens",
-        mutation_notation="L22F", wt_residue="L", mutant_residue="F",
-        uniprot_position=22, pdb_position=22, pdb_chain="A",
-        ligand_id="MTX", ligand_name="Methotrexate", ligand_role="inhibitor",
-        assay_type=AssayType.DELTA_G, wt_value=0.0, mutant_value=2.1, value_unit="kcal/mol",
-        delta_delta_g=2.1,
-        effect_direction=EffectDirection.AFFINITY_DECREASE,
-        wt_pdb=_dhfr_wt, review_notes="WT structure: 1u72 (MTX/NDP, 1.9Å). No L22F mutant structure available.",
-        experimental_method="in vitro purified enzyme",
-        pmid="8345919", data_source="manual_curation",
-        data_quality=DataQuality.CURATED, review_status=ReviewStatus.ACCEPTED,
-        split_group=_dhfr_acc,
-    ))
-
-    cases.append(MutationLigandPair(
-        sample_id="DHFR_L22Y_MTX",
-        protein_accession=_dhfr_acc, protein_name=_dhfr(), organism="Homo sapiens",
-        mutation_notation="L22Y", wt_residue="L", mutant_residue="Y",
-        uniprot_position=22, pdb_position=22, pdb_chain="A",
-        ligand_id="MTX", ligand_name="Methotrexate", ligand_role="inhibitor",
-        assay_type=AssayType.DELTA_G, wt_value=0.0, mutant_value=1.5, value_unit="kcal/mol",
-        delta_delta_g=1.5, effect_direction=EffectDirection.AFFINITY_DECREASE,
-        wt_pdb="1U72.pdb", mutant_pdb="1DLS.pdb",
-        has_structure_pair=True, has_computed_features=True,
-        experimental_method="in vitro purified enzyme",
-        pmid="8345919", data_source="manual_curation",
-        data_quality=DataQuality.CURATED, review_status=ReviewStatus.ACCEPTED,
-        split_group=_dhfr_acc,
-    ))
-
-    cases.append(MutationLigandPair(
-        sample_id="DHFR_F31R_MTX",
-        protein_accession=_dhfr_acc, protein_name=_dhfr(), organism="Homo sapiens",
-        mutation_notation="F31R", wt_residue="F", mutant_residue="R",
-        uniprot_position=31, pdb_position=31, pdb_chain="A",
-        ligand_id="MTX", ligand_name="Methotrexate", ligand_role="inhibitor",
-        assay_type=AssayType.DELTA_G, wt_value=0.0, mutant_value=3.5, value_unit="kcal/mol",
-        delta_delta_g=3.5, effect_direction=EffectDirection.AFFINITY_DECREASE,
-        wt_pdb=_dhfr_wt, review_notes="WT: 1u72 (MTX/NDP). ΔΔG=3.5 kcal/mol from ProTherm.",
-        experimental_method="in vitro purified enzyme",
-        pmid="11258910", data_source="manual_curation",
-        data_quality=DataQuality.CURATED, review_status=ReviewStatus.ACCEPTED,
-        split_group=_dhfr_acc,
-    ))
-
-    cases.append(MutationLigandPair(
-        sample_id="DHFR_F31S_MTX",
-        protein_accession=_dhfr_acc, protein_name=_dhfr(), organism="Homo sapiens",
-        mutation_notation="F31S", wt_residue="F", mutant_residue="S",
-        uniprot_position=31, pdb_position=31, pdb_chain="A",
-        ligand_id="MTX", ligand_name="Methotrexate", ligand_role="inhibitor",
-        assay_type=AssayType.DELTA_G, wt_value=0.0, mutant_value=2.8, value_unit="kcal/mol",
-        delta_delta_g=2.8, effect_direction=EffectDirection.AFFINITY_DECREASE,
-        wt_pdb=_dhfr_wt, review_notes="WT: 1u72 (MTX/NDP). ΔΔG=2.8 kcal/mol from ProTherm.",
-        experimental_method="in vitro purified enzyme",
-        pmid="11258910", data_source="manual_curation",
-        data_quality=DataQuality.CURATED, review_status=ReviewStatus.ACCEPTED,
-        split_group=_dhfr_acc,
-    ))
-
-    cases.append(MutationLigandPair(
-        sample_id="DHFR_E30A_MTX",
-        protein_accession=_dhfr_acc, protein_name=_dhfr(), organism="Homo sapiens",
-        mutation_notation="E30A", wt_residue="E", mutant_residue="A",
-        uniprot_position=30, pdb_position=30, pdb_chain="A",
-        ligand_id="MTX", ligand_name="Methotrexate", ligand_role="inhibitor",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=8.0, value_unit="fold_Ki",
-        effect_direction=EffectDirection.AFFINITY_DECREASE,
-        wt_pdb=_dhfr_wt, review_notes="WT: 1u72 (MTX/NDP). Catalytic residue (E30) mutation.",
-        experimental_method="in vitro purified enzyme",
-        pmid="11527979", data_source="manual_curation",
-        data_quality=DataQuality.CURATED, review_status=ReviewStatus.ACCEPTED,
-        split_group=_dhfr_acc,
-    ))
-
-    # =====================================================================
-    # TEM-1 β-Lactamase (P62593) — 5 cases
-    # =====================================================================
-
-    _blac = lambda: "TEM-1 Beta-lactamase"
-    _blac_acc = "P62593"
-    _blac_wt = "1btl.pdb"  # WT TEM-1, 1.8Å
-
-    cases.append(MutationLigandPair(
-        sample_id="BLAC_S70A_PEN",
-        protein_accession=_blac_acc, protein_name=_blac(), organism="Escherichia coli",
-        mutation_notation="S70A", wt_residue="S", mutant_residue="A",
-        uniprot_position=70, pdb_position=70, pdb_chain="A",
-        ligand_id="PEN", ligand_name="Penicillin G", ligand_role="substrate",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=0.05, value_unit="fold_Ki",
-        effect_direction=EffectDirection.AFFINITY_INCREASE,
-        wt_pdb=_blac_wt, review_notes="WT: 1btl (1.8Å, no substrate). Catalytic serine mutant.",
-        experimental_method="in vitro purified enzyme",
-        pmid="2205042", data_source="manual_curation",
-        data_quality=DataQuality.CURATED, review_status=ReviewStatus.ACCEPTED,
-        split_group=_blac_acc,
-    ))
-
-    for blac_mut in [
-        ("S130A", 130), ("E166A", 166), ("K73A", 73), ("E104A", 104)
-    ]:
-        cases.append(MutationLigandPair(
-            sample_id=f"BLAC_{blac_mut[0]}_PEN",
-            protein_accession=_blac_acc, protein_name=_blac(), organism="Escherichia coli",
-            mutation_notation=blac_mut[0], wt_residue=blac_mut[0][0], mutant_residue="A",
-            uniprot_position=blac_mut[1], pdb_position=blac_mut[1], pdb_chain="A",
-            ligand_id="PEN", ligand_name="Penicillin G", ligand_role="substrate",
-            assay_type=AssayType.KI, wt_value=1.0, mutant_value=0.10, value_unit="fold_Ki",
-            effect_direction=EffectDirection.AFFINITY_INCREASE,
-            wt_pdb="1btl.pdb", review_notes="WT: 1btl (1.8Å). Catalytic residue mutant.",
-            experimental_method="in vitro purified enzyme",
-            pmid="2205042", data_source="manual_curation",
-            data_quality=DataQuality.CURATED, review_status=ReviewStatus.ACCEPTED,
-            split_group=_blac_acc,
-        ))
-
-    # =====================================================================
-    # EGFR Kinase (P00533) — 5 cases (literature-reported, structure pending)
-    # =====================================================================
-
-    _egfr = lambda: "EGFR Kinase"
-    _egfr_acc = "P00533"
-
-    egfr_mutations = [
-        ("T790M", "T", "M", 790, "IRE", "Gefitinib", 100.0, "PMID:15118073"),
-        ("T790M", "T", "M", 790, "ERL", "Erlotinib", 50.0, "PMID:15118073"),
-        ("L858R", "L", "R", 858, "IRE", "Gefitinib", 0.05, "PMID:15118073"),
-        ("G719S", "G", "S", 719, "IRE", "Gefitinib", 0.10, "PMID:15118073"),
-        ("C797S", "C", "S", 797, "IRE", "Gefitinib", 80.0, "PMID:24722272"),
-    ]
-    for notation, wt, mut, pos, lig, lname, fold, pmid in egfr_mutations:
-        direction = EffectDirection.AFFINITY_DECREASE if fold > 1.0 else EffectDirection.AFFINITY_INCREASE
-        cases.append(MutationLigandPair(
-            sample_id=f"EGFR_{notation}_{lig}",
-            protein_accession=_egfr_acc, protein_name=_egfr(), organism="Homo sapiens",
-            mutation_notation=notation, wt_residue=wt, mutant_residue=mut,
-            uniprot_position=pos, pdb_position=pos, pdb_chain="A",
-            ligand_id=lig, ligand_name=lname, ligand_role="inhibitor",
-            assay_type=AssayType.KI, wt_value=1.0, mutant_value=fold, value_unit="fold_Ki",
-            effect_direction=direction,
-            experimental_method="cell-based enzymatic assay",
-            pmid=pmid, data_source="manual_curation",
-            data_quality=DataQuality.REPORTED, review_status=ReviewStatus.ACCEPTED,
-            split_group=_egfr_acc,
-        ))
-
-    # =====================================================================
-    # ABL1 Kinase (P00519) — 5 cases (literature, structure pending)
-    # =====================================================================
-
-    _abl = lambda: "ABL1 Kinase"
-    _abl_acc = "P00519"
-
-    abl_mutations = [
-        ("T315I", "T", "I", 315, "STI", "Imatinib", 100.0, "PMID:11964322"),
-        ("E255K", "E", "K", 255, "STI", "Imatinib", 30.0, "PMID:11964322"),
-        ("F317L", "F", "L", 317, "STI", "Imatinib", 15.0, "PMID:11964322"),
-        ("Y253H", "Y", "H", 253, "STI", "Imatinib", 20.0, "PMID:11964322"),
-        ("M351T", "M", "T", 351, "STI", "Imatinib", 3.0, "PMID:11964322"),
-    ]
-    for notation, wt, mut, pos, lig, lname, fold, pmid in abl_mutations:
-        cases.append(MutationLigandPair(
-            sample_id=f"ABL1_{notation}_{lig}",
-            protein_accession=_abl_acc, protein_name=_abl(), organism="Homo sapiens",
-            mutation_notation=notation, wt_residue=wt, mutant_residue=mut,
-            uniprot_position=pos, pdb_position=pos, pdb_chain="A",
-            ligand_id=lig, ligand_name=lname, ligand_role="inhibitor",
-            assay_type=AssayType.KI, wt_value=1.0, mutant_value=fold, value_unit="fold_Ki",
+def _verified() -> list[MutationLigandPair]:
+    cases = [
+        # HIV-1 protease V82A + indinavir (MK1): 3.3-fold Ki increase.
+        # Mahalingam et al. 2004, Eur J Biochem 271:1516-24, abstract:
+        # "The inhibition (Ki) of PR(V82A) ... was 3.3-fold".
+        # Structure pair 1SDT/1SDV verified: 99-aa chains differ ONLY at
+        # position 82 (V->A), both bound to MK1.  1SDT carries background
+        # mutations Q7K/L33I/L63I/C67A/C95A relative to UniProt P03367.
+        _case(
+            "HIV_V82A_MK1",
+            _HIV_ACC,
+            _HIV,
+            "HIV-1",
+            "V82A",
+            82,
+            "MK1",
+            "MK1 (L-735,524, indinavir)",
+            assay_type=AssayType.KI,
+            wt_value=1.0,
+            mutant_value=3.3,
+            value_unit="fold_Ki",
             effect_direction=EffectDirection.AFFINITY_DECREASE,
-            experimental_method="cell-based enzymatic assay",
-            pmid=pmid, data_source="manual_curation",
-            data_quality=DataQuality.REPORTED, review_status=ReviewStatus.ACCEPTED,
-            split_group=_abl_acc,
-        ))
-
-    # ---- Diversity: breaking family=label binding ---------------------------
-
-    # HIV: M46I compensatory (near-neutral), N88S hypersusceptible (increase), A71V polymorphic (near-neutral)
-    cases.append(MutationLigandPair(
-        sample_id="HIV_M46I_IDV",
-        protein_accession=_hiv_acc, protein_name=_hiv(), organism="HIV-1",
-        mutation_notation="M46I", wt_residue="M", mutant_residue="I",
-        uniprot_position=46, pdb_position=46, pdb_chain="A",
-        ligand_id="IDV", ligand_name="Indinavir", ligand_role="inhibitor",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=1.5, value_unit="fold_Ki",
-        effect_direction=EffectDirection.APPROX_NEUTRAL,
-        wt_pdb="1sdt.cif", review_notes="Compensatory — near-neutral. Adds NEUTRAL to HIV.",
-        experimental_method="in vitro purified enzyme",
-        pmid="8810284", data_source="manual_curation",
-        data_quality=DataQuality.CURATED, review_status=ReviewStatus.ACCEPTED,
-        split_group=_hiv_acc,
-    ))
-    cases.append(MutationLigandPair(
-        sample_id="HIV_N88S_IDV",
-        protein_accession=_hiv_acc, protein_name=_hiv(), organism="HIV-1",
-        mutation_notation="N88S", wt_residue="N", mutant_residue="S",
-        uniprot_position=88, pdb_position=88, pdb_chain="A",
-        ligand_id="IDV", ligand_name="Indinavir", ligand_role="inhibitor",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=0.3, value_unit="fold_Ki",
-        effect_direction=EffectDirection.AFFINITY_INCREASE,
-        wt_pdb="1sdt.cif", review_notes="Hypersusceptibility — adds INCREASE to HIV.",
-        experimental_method="in vitro purified enzyme",
-        pmid="11502742", data_source="manual_curation",
-        data_quality=DataQuality.CURATED, review_status=ReviewStatus.ACCEPTED,
-        split_group=_hiv_acc,
-    ))
-
-    # DHFR: S118A surface residue, near-neutral
-    cases.append(MutationLigandPair(
-        sample_id="DHFR_S118A_MTX",
-        protein_accession=_dhfr_acc, protein_name=_dhfr(), organism="Homo sapiens",
-        mutation_notation="S118A", wt_residue="S", mutant_residue="A",
-        uniprot_position=118, pdb_position=118, pdb_chain="A",
-        ligand_id="MTX", ligand_name="Methotrexate", ligand_role="inhibitor",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=1.1, value_unit="fold_Ki",
-        effect_direction=EffectDirection.APPROX_NEUTRAL,
-        wt_pdb=_dhfr_wt, review_notes="Surface residue — near-neutral. Adds NEUTRAL to DHFR.",
-        experimental_method="in vitro purified enzyme",
-        pmid="11527979", data_source="manual_curation",
-        data_quality=DataQuality.CURATED, review_status=ReviewStatus.ACCEPTED,
-        split_group=_dhfr_acc,
-    ))
-
-    # BLAC: G238S and R244S — ESBL mutations, decrease penicillin affinity
-    cases.append(MutationLigandPair(
-        sample_id="BLAC_G238S_PEN",
-        protein_accession=_blac_acc, protein_name=_blac(), organism="Escherichia coli",
-        mutation_notation="G238S", wt_residue="G", mutant_residue="S",
-        uniprot_position=238, pdb_position=238, pdb_chain="A",
-        ligand_id="PEN", ligand_name="Penicillin G", ligand_role="substrate",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=3.0, value_unit="fold_Ki",
-        effect_direction=EffectDirection.AFFINITY_DECREASE,
-        wt_pdb="1btl.pdb", review_notes="ESBL — adds DECREASE to BLAC.",
-        experimental_method="in vitro purified enzyme",
-        pmid="16189104", data_source="manual_curation",
-        data_quality=DataQuality.CURATED, review_status=ReviewStatus.ACCEPTED,
-        split_group=_blac_acc,
-    ))
-    cases.append(MutationLigandPair(
-        sample_id="BLAC_R244S_PEN",
-        protein_accession=_blac_acc, protein_name=_blac(), organism="Escherichia coli",
-        mutation_notation="R244S", wt_residue="R", mutant_residue="S",
-        uniprot_position=244, pdb_position=244, pdb_chain="A",
-        ligand_id="PEN", ligand_name="Penicillin G", ligand_role="substrate",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=2.5, value_unit="fold_Ki",
-        effect_direction=EffectDirection.AFFINITY_DECREASE,
-        wt_pdb="1btl.pdb", review_notes="ESBL — adds DECREASE to BLAC.",
-        experimental_method="in vitro purified enzyme",
-        pmid="16189104", data_source="manual_curation",
-        data_quality=DataQuality.CURATED, review_status=ReviewStatus.ACCEPTED,
-        split_group=_blac_acc,
-    ))
-
-    # ---- ABL1: fill gaps (needs more decrease to hit quota) -----------------
-    cases.append(MutationLigandPair(
-        sample_id="ABL1_E255V_STI",
-        protein_accession=_abl_acc, protein_name=_abl(), organism="Homo sapiens",
-        mutation_notation="E255V", wt_residue="E", mutant_residue="V",
-        uniprot_position=255, pdb_position=255, pdb_chain="A",
-        ligand_id="STI", ligand_name="Imatinib", ligand_role="inhibitor",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=25.0, value_unit="fold_Ki",
-        effect_direction=EffectDirection.AFFINITY_DECREASE,
-        review_notes="P-loop mutation, strong resistance.",
-        experimental_method="cell-based assay", pmid="11964322",
-        data_source="manual_curation", data_quality=DataQuality.REPORTED,
-        review_status=ReviewStatus.ACCEPTED, split_group=_abl_acc,
-    ))
-    cases.append(MutationLigandPair(
-        sample_id="ABL1_H396P_STI",
-        protein_accession=_abl_acc, protein_name=_abl(), organism="Homo sapiens",
-        mutation_notation="H396P", wt_residue="H", mutant_residue="P",
-        uniprot_position=396, pdb_position=396, pdb_chain="A",
-        ligand_id="STI", ligand_name="Imatinib", ligand_role="inhibitor",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=4.0, value_unit="fold_Ki",
-        effect_direction=EffectDirection.AFFINITY_DECREASE,
-        review_notes="Activation loop, moderate resistance.",
-        experimental_method="cell-based assay", pmid="11964322",
-        data_source="manual_curation", data_quality=DataQuality.REPORTED,
-        review_status=ReviewStatus.ACCEPTED, split_group=_abl_acc,
-    ))
-
-    # ---- HIV: fill neutral/increase -----------------------------------------
-    for (notation, wt, mut, pos, fold, direction) in [
-        ("L63P", "L", "P", 63, 1.3, EffectDirection.APPROX_NEUTRAL),
-        ("I93L", "I", "L", 93, 1.1, EffectDirection.APPROX_NEUTRAL),
-    ]:
-        cases.append(MutationLigandPair(
-            sample_id=f"HIV_{notation}_IDV",
-            protein_accession=_hiv_acc, protein_name=_hiv(), organism="HIV-1",
-            mutation_notation=notation, wt_residue=wt, mutant_residue=mut,
-            uniprot_position=pos, pdb_position=pos, pdb_chain="A",
-            ligand_id="IDV", ligand_name="Indinavir", ligand_role="inhibitor",
-            assay_type=AssayType.KI, wt_value=1.0, mutant_value=fold, value_unit="fold_Ki",
-            effect_direction=direction, wt_pdb="1sdt.cif",
-            review_notes=f"Near-neutral, adds to HIV {direction.value}.",
-            experimental_method="in vitro", pmid="11095614",
-            data_source="manual_curation", data_quality=DataQuality.CURATED,
-            review_status=ReviewStatus.ACCEPTED, split_group=_hiv_acc,
-        ))
-
-    # ---- DHFR: fill neutral -------------------------------------------------
-    cases.append(MutationLigandPair(
-        sample_id="DHFR_G116A_MTX",
-        protein_accession=_dhfr_acc, protein_name=_dhfr(), organism="Homo sapiens",
-        mutation_notation="G116A", wt_residue="G", mutant_residue="A",
-        uniprot_position=116, pdb_position=116, pdb_chain="A",
-        ligand_id="MTX", ligand_name="Methotrexate", ligand_role="inhibitor",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=1.2, value_unit="fold_Ki",
-        effect_direction=EffectDirection.APPROX_NEUTRAL, wt_pdb=_dhfr_wt,
-        review_notes="Surface residue, near-neutral.",
-        experimental_method="in vitro", pmid="11527979",
-        data_source="manual_curation", data_quality=DataQuality.CURATED,
-        review_status=ReviewStatus.ACCEPTED, split_group=_dhfr_acc,
-    ))
-
-    # ---- EGFR: fill neutral -------------------------------------------------
-    cases.append(MutationLigandPair(
-        sample_id="EGFR_V765M_IRE",
-        protein_accession=_egfr_acc, protein_name=_egfr(), organism="Homo sapiens",
-        mutation_notation="V765M", wt_residue="V", mutant_residue="M",
-        uniprot_position=765, pdb_position=765, pdb_chain="A",
-        ligand_id="IRE", ligand_name="Gefitinib", ligand_role="inhibitor",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=2.0, value_unit="fold_Ki",
-        effect_direction=EffectDirection.APPROX_NEUTRAL,
-        review_notes="Minor effect, near-neutral.",
-        experimental_method="cell-based assay", pmid="15118073",
-        data_source="manual_curation", data_quality=DataQuality.REPORTED,
-        review_status=ReviewStatus.ACCEPTED, split_group=_egfr_acc,
-    ))
-
-    # ---- BLAC: fill neutral -------------------------------------------------
-    cases.append(MutationLigandPair(
-        sample_id="BLAC_A237G_PEN",
-        protein_accession=_blac_acc, protein_name=_blac(), organism="Escherichia coli",
-        mutation_notation="A237G", wt_residue="A", mutant_residue="G",
-        uniprot_position=237, pdb_position=237, pdb_chain="A",
-        ligand_id="PEN", ligand_name="Penicillin G", ligand_role="substrate",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=1.3, value_unit="fold_Ki",
-        effect_direction=EffectDirection.APPROX_NEUTRAL, wt_pdb="1btl.pdb",
-        review_notes="Minor effect, near-neutral.",
-        experimental_method="in vitro", pmid="16189104",
-        data_source="manual_curation", data_quality=DataQuality.CURATED,
-        review_status=ReviewStatus.ACCEPTED, split_group=_blac_acc,
-    ))
-
-    # ---- New family: Trypsin + Benzamidine (6 cases) ------------------------
-    _tryp_acc = "P00760"
-    for (notation, wt, mut, pos, fold, direction) in [
-        ("D189S", "D", "S", 189, 0.8, EffectDirection.APPROX_NEUTRAL),
-        ("G193A", "G", "A", 193, 1.5, EffectDirection.APPROX_NEUTRAL),
-        ("S195A", "S", "A", 195, 100.0, EffectDirection.AFFINITY_DECREASE),
-        ("G216A", "G", "A", 216, 2.0, EffectDirection.APPROX_NEUTRAL),
-        ("G226A", "G", "A", 226, 3.0, EffectDirection.AFFINITY_DECREASE),
-        ("K60A", "K", "A", 60, 1.0, EffectDirection.APPROX_NEUTRAL),
-    ]:
-        cases.append(MutationLigandPair(
-            sample_id=f"TRYP_{notation}_BEN",
-            protein_accession=_tryp_acc, protein_name="Bovine Trypsin", organism="Bos taurus",
-            mutation_notation=notation, wt_residue=wt, mutant_residue=mut,
-            uniprot_position=pos, pdb_position=pos, pdb_chain="A",
-            ligand_id="BEN", ligand_name="Benzamidine", ligand_role="inhibitor",
-            assay_type=AssayType.KI, wt_value=1.0, mutant_value=fold, value_unit="fold_Ki",
-            effect_direction=direction, wt_pdb="3ptb.pdb",
-            review_notes="New family: trypsin. S195A=catalytic triad, strong effect.",
-            experimental_method="in vitro", pmid="3131872",
-            data_source="manual_curation", data_quality=DataQuality.CURATED,
-            review_status=ReviewStatus.ACCEPTED, split_group=_tryp_acc,
-        ))
-
-    # ---- New family: SARS-CoV-2 Mpro (4 cases) -----------------------------
-    _mpro_acc = "P0DTD1"
-    for (notation, wt, mut, pos, fold, direction) in [
-        ("H41A", "H", "A", 41, 500.0, EffectDirection.AFFINITY_DECREASE),
-        ("C145A", "C", "A", 145, 1000.0, EffectDirection.AFFINITY_DECREASE),
-        ("E166A", "E", "A", 166, 50.0, EffectDirection.AFFINITY_DECREASE),
-        ("Q189A", "Q", "A", 189, 3.0, EffectDirection.AFFINITY_DECREASE),
-    ]:
-        cases.append(MutationLigandPair(
-            sample_id=f"MPRO_{notation}_NIR",
-            protein_accession=_mpro_acc, protein_name="SARS-CoV-2 Mpro", organism="SARS-CoV-2",
-            mutation_notation=notation, wt_residue=wt, mutant_residue=mut,
-            uniprot_position=pos, pdb_position=pos, pdb_chain="A",
-            ligand_id="NIR", ligand_name="Nirmatrelvir", ligand_role="inhibitor",
-            assay_type=AssayType.KI, wt_value=1.0, mutant_value=fold, value_unit="fold_Ki",
-            effect_direction=direction,
-            review_notes="New family: Mpro. Catalytic residues show strongest effect.",
-            wt_pdb="6lu7.pdb",
-            experimental_method="in vitro FRET", pmid="32726803",
-            data_source="manual_curation", data_quality=DataQuality.CURATED,
-            review_status=ReviewStatus.ACCEPTED, split_group=_mpro_acc,
-        ))
-
-    # ---- Mpro: neutral/increase -------------------------------------------
-    for (notation, wt, mut, pos, fold, direction) in [
-        ("T25A", "T", "A", 25, 1.2, EffectDirection.APPROX_NEUTRAL),
-        ("N142A", "N", "A", 142, 1.5, EffectDirection.APPROX_NEUTRAL),
-        ("G143A", "G", "A", 143, 8.0, EffectDirection.AFFINITY_DECREASE),
-        ("S144A", "S", "A", 144, 2.0, EffectDirection.APPROX_NEUTRAL),
-    ]:
-        cases.append(MutationLigandPair(
-            sample_id=f"MPRO_{notation}_NIR",
-            protein_accession=_mpro_acc, protein_name="SARS-CoV-2 Mpro", organism="SARS-CoV-2",
-            mutation_notation=notation, wt_residue=wt, mutant_residue=mut,
-            uniprot_position=pos, pdb_position=pos, pdb_chain="A",
-            ligand_id="NIR", ligand_name="Nirmatrelvir", ligand_role="inhibitor",
-            assay_type=AssayType.KI, wt_value=1.0, mutant_value=fold, value_unit="fold_Ki",
-            effect_direction=direction,
-            review_notes=f"Mpro {direction.value} — building label diversity.",
-            wt_pdb="6lu7.pdb",
-            experimental_method="in vitro FRET", pmid="32726803",
-            data_source="manual_curation", data_quality=DataQuality.CURATED,
-            review_status=ReviewStatus.ACCEPTED, split_group=_mpro_acc,
-        ))
-
-    # ---- ABL1: neutral (rare, but some mutations are near-neutral) ---------
-    for (notation, wt, mut, pos, fold, direction, pdb) in [
-        ("L248V", "L", "V", 248, 1.5, EffectDirection.APPROX_NEUTRAL, "2hyy.pdb"),
-        ("G250E", "G", "E", 250, 2.0, EffectDirection.APPROX_NEUTRAL, "2hyy.pdb"),
-        ("Q252H", "Q", "H", 252, 8.0, EffectDirection.AFFINITY_DECREASE, "2hyy.pdb"),
-    ]:
-        cases.append(MutationLigandPair(
-            sample_id=f"ABL1_{notation}_STI",
-            protein_accession=_abl_acc, protein_name=_abl(), organism="Homo sapiens",
-            mutation_notation=notation, wt_residue=wt, mutant_residue=mut,
-            uniprot_position=pos, pdb_position=pos, pdb_chain="A",
-            ligand_id="STI", ligand_name="Imatinib", ligand_role="inhibitor",
-            assay_type=AssayType.KI, wt_value=1.0, mutant_value=fold, value_unit="fold_Ki",
-            effect_direction=direction,
-            review_notes=f"ABL1 {direction.value} — building label diversity.",
-            experimental_method="cell-based assay", pmid="11964322",
-            data_source="manual_curation", data_quality=DataQuality.REPORTED,
-            review_status=ReviewStatus.ACCEPTED, split_group=_abl_acc,
-            wt_pdb=pdb,
-        ))
-
-    # ---- Trypsin: add decrease direction -----------------------------------
-    for (notation, wt, mut, pos, fold, direction) in [
-        ("H57A", "H", "A", 57, 1000.0, EffectDirection.AFFINITY_DECREASE),
-        ("D102N", "D", "N", 102, 500.0, EffectDirection.AFFINITY_DECREASE),
-    ]:
-        cases.append(MutationLigandPair(
-            sample_id=f"TRYP_{notation}_BEN",
-            protein_accession=_tryp_acc, protein_name="Bovine Trypsin", organism="Bos taurus",
-            mutation_notation=notation, wt_residue=wt, mutant_residue=mut,
-            uniprot_position=pos, pdb_position=pos, pdb_chain="A",
-            ligand_id="BEN", ligand_name="Benzamidine", ligand_role="inhibitor",
-            assay_type=AssayType.KI, wt_value=1.0, mutant_value=fold, value_unit="fold_Ki",
-            effect_direction=direction, wt_pdb="3ptb.pdb",
-            review_notes="Catalytic triad — strong effect.",
-            experimental_method="in vitro", pmid="3131872",
-            data_source="manual_curation", data_quality=DataQuality.CURATED,
-            review_status=ReviewStatus.ACCEPTED, split_group=_tryp_acc,
-        ))
-
-    # ---- New family: Influenza Neuraminidase + Oseltamivir (5 cases) -------
-    _neur = "P03468"
-    for (notation, wt, mut, pos, fold, direction) in [
-        ("H275Y", "H", "Y", 275, 400.0, EffectDirection.AFFINITY_DECREASE),
-        ("E119V", "E", "V", 119, 100.0, EffectDirection.AFFINITY_DECREASE),
-        ("R292K", "R", "K", 292, 10000.0, EffectDirection.AFFINITY_DECREASE),
-        ("N294S", "N", "S", 294, 30.0, EffectDirection.AFFINITY_DECREASE),
-        ("I223R", "I", "R", 223, 10.0, EffectDirection.AFFINITY_DECREASE),
-    ]:
-        cases.append(MutationLigandPair(
-            sample_id=f"NEUR_{notation}_OSL",
-            protein_accession=_neur, protein_name="Influenza Neuraminidase", organism="Influenza A virus",
-            mutation_notation=notation, wt_residue=wt, mutant_residue=mut,
-            uniprot_position=pos, pdb_position=pos, pdb_chain="A",
-            ligand_id="OSL", ligand_name="Oseltamivir", ligand_role="inhibitor",
-            assay_type=AssayType.KI, wt_value=1.0, mutant_value=fold, value_unit="fold_Ki",
-            effect_direction=direction,
-            review_notes="New family: neuraminidase. H275Y is classic oseltamivir resistance.",
-            wt_pdb="2hu4.pdb",
-            experimental_method="in vitro enzymatic assay", pmid="16954204",
-            data_source="manual_curation", data_quality=DataQuality.CURATED,
-            review_status=ReviewStatus.ACCEPTED, split_group=_neur,
-        ))
-
-    # ---- DHFR: add increase (rare but documented) --------------------------
-    cases.append(MutationLigandPair(
-        sample_id="DHFR_Q35E_MTX",
-        protein_accession=_dhfr_acc, protein_name=_dhfr(), organism="Homo sapiens",
-        mutation_notation="Q35E", wt_residue="Q", mutant_residue="E",
-        uniprot_position=35, pdb_position=35, pdb_chain="A",
-        ligand_id="MTX", ligand_name="Methotrexate", ligand_role="inhibitor",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=0.7, value_unit="fold_Ki",
-        effect_direction=EffectDirection.AFFINITY_INCREASE, wt_pdb=_dhfr_wt,
-        review_notes="Slightly increased MTX binding — rare increase direction in DHFR.",
-        experimental_method="in vitro", pmid="11258910",
-        data_source="manual_curation", data_quality=DataQuality.CURATED,
-        review_status=ReviewStatus.ACCEPTED, split_group=_dhfr_acc,
-    ))
-
-    # ---- HIV: add more increase (hypersusceptibility) ----------------------
-    cases.append(MutationLigandPair(
-        sample_id="HIV_K20I_IDV",
-        protein_accession=_hiv_acc, protein_name=_hiv(), organism="HIV-1",
-        mutation_notation="K20I", wt_residue="K", mutant_residue="I",
-        uniprot_position=20, pdb_position=20, pdb_chain="A",
-        ligand_id="IDV", ligand_name="Indinavir", ligand_role="inhibitor",
-        assay_type=AssayType.KI, wt_value=1.0, mutant_value=0.5, value_unit="fold_Ki",
-        effect_direction=EffectDirection.AFFINITY_INCREASE, wt_pdb="1sdt.cif",
-        review_notes="Hypersusceptibility — adds increase to HIV.",
-        experimental_method="in vitro", pmid="11502742",
-        data_source="manual_curation", data_quality=DataQuality.CURATED,
-        review_status=ReviewStatus.ACCEPTED, split_group=_hiv_acc,
-    ))
-
-    # ---- HIV: bulk fill neutral + increase (10 more cases) -------------------
-    # Using 1sdt as WT reference for all
-    hiv_bulk = [
-        # neutral (polymorphic/accessory mutations)
-        ("V11I", "V", "I", 11, 1.2, EffectDirection.APPROX_NEUTRAL),
-        ("T12S", "T", "S", 12, 1.1, EffectDirection.APPROX_NEUTRAL),
-        ("I15V", "I", "V", 15, 1.2, EffectDirection.APPROX_NEUTRAL),
-        ("E35D", "E", "D", 35, 1.3, EffectDirection.APPROX_NEUTRAL),
-        ("S37N", "S", "N", 37, 1.1, EffectDirection.APPROX_NEUTRAL),
-        ("R41K", "R", "K", 41, 1.2, EffectDirection.APPROX_NEUTRAL),
-        ("K55R", "K", "R", 55, 1.2, EffectDirection.APPROX_NEUTRAL),
-        ("Q61E", "Q", "E", 61, 1.3, EffectDirection.APPROX_NEUTRAL),
-        ("I72V", "I", "V", 72, 1.2, EffectDirection.APPROX_NEUTRAL),
-        ("T74S", "T", "S", 74, 1.1, EffectDirection.APPROX_NEUTRAL),
+            wt_pdb="1sdt.cif",
+            mutant_pdb="1sdv.cif",
+            background_mutations=["Q7K", "L33I", "L63I", "C67A", "C95A"],
+            pmid="15066177",
+            doi="10.1111/j.1432-1033.2004.04060.x",
+            review_status=ReviewStatus.ACCEPTED,
+            review_notes="fold verified from abstract; absolute Ki values (540->1810 pM) "
+            "not yet verified (paywalled full text).",
+            data_quality=DataQuality.CURATED,
+            experimental_method="in vitro purified enzyme",
+        ),
+        # HIV-1 protease L90M + indinavir (MK1): 0.16-fold Ki (hypersusceptibility).
+        # Same paper, same abstract.  Mutant structure 1SDU (L90M + MK1, 1.25 A).
+        _case(
+            "HIV_L90M_MK1",
+            _HIV_ACC,
+            _HIV,
+            "HIV-1",
+            "L90M",
+            90,
+            "MK1",
+            "MK1 (L-735,524, indinavir)",
+            assay_type=AssayType.KI,
+            wt_value=1.0,
+            mutant_value=0.16,
+            value_unit="fold_Ki",
+            effect_direction=EffectDirection.AFFINITY_INCREASE,
+            wt_pdb="1sdt.cif",
+            mutant_pdb="1sdu.cif",
+            background_mutations=["Q7K", "L33I", "L63I", "C67A", "C95A"],
+            pmid="15066177",
+            doi="10.1111/j.1432-1033.2004.04060.x",
+            review_status=ReviewStatus.ACCEPTED,
+            review_notes="fold verified from abstract; absolute Ki values not yet verified.",
+            data_quality=DataQuality.CURATED,
+            experimental_method="in vitro purified enzyme",
+        ),
+        # HIV-1 protease G48V + saquinavir: 86-fold Ki increase.
+        # Liu et al. 2008, J Mol Biol 381:102-15, Table 1 (0.42 -> 36 nM).
+        _case(
+            "HIV_G48V_SQV",
+            _HIV_ACC,
+            _HIV,
+            "HIV-1",
+            "G48V",
+            48,
+            "SQV",
+            "Saquinavir",
+            assay_type=AssayType.KI,
+            wt_value=0.42,
+            mutant_value=36.0,
+            value_unit="nM",
+            effect_direction=EffectDirection.AFFINITY_DECREASE,
+            pmid="18597780",
+            doi="10.1016/j.jmb.2008.05.062",
+            review_status=ReviewStatus.ACCEPTED,
+            review_notes="Table 1 values verified against PMC2754059.",
+            data_quality=DataQuality.CURATED,
+            experimental_method="in vitro purified enzyme",
+        ),
+        # HIV-1 protease I50V + darunavir: 31-fold Ki increase.
+        # Liu et al. 2008 Table 1 (0.58 -> 18 nM).
+        _case(
+            "HIV_I50V_DRV",
+            _HIV_ACC,
+            _HIV,
+            "HIV-1",
+            "I50V",
+            50,
+            "DRV",
+            "Darunavir",
+            assay_type=AssayType.KI,
+            wt_value=0.58,
+            mutant_value=18.0,
+            value_unit="nM",
+            effect_direction=EffectDirection.AFFINITY_DECREASE,
+            pmid="18597780",
+            doi="10.1016/j.jmb.2008.05.062",
+            review_status=ReviewStatus.ACCEPTED,
+            review_notes="Table 1 values verified against PMC2754059.",
+            data_quality=DataQuality.CURATED,
+            experimental_method="in vitro purified enzyme",
+        ),
+        # HIV-1 protease I54V + saquinavir: 15-fold Ki increase.
+        # Liu et al. 2008 Table 1 (0.42 -> 6 nM).
+        _case(
+            "HIV_I54V_SQV",
+            _HIV_ACC,
+            _HIV,
+            "HIV-1",
+            "I54V",
+            54,
+            "SQV",
+            "Saquinavir",
+            assay_type=AssayType.KI,
+            wt_value=0.42,
+            mutant_value=6.0,
+            value_unit="nM",
+            effect_direction=EffectDirection.AFFINITY_DECREASE,
+            pmid="18597780",
+            doi="10.1016/j.jmb.2008.05.062",
+            review_status=ReviewStatus.ACCEPTED,
+            review_notes="Table 1 values verified against PMC2754059.",
+            data_quality=DataQuality.CURATED,
+            experimental_method="in vitro purified enzyme",
+        ),
+        # HIV-1 protease I54M + saquinavir: 5-fold Ki increase.
+        # Liu et al. 2008 Table 1 (0.42 -> 2.2 nM).
+        _case(
+            "HIV_I54M_SQV",
+            _HIV_ACC,
+            _HIV,
+            "HIV-1",
+            "I54M",
+            54,
+            "SQV",
+            "Saquinavir",
+            assay_type=AssayType.KI,
+            wt_value=0.42,
+            mutant_value=2.2,
+            value_unit="nM",
+            effect_direction=EffectDirection.AFFINITY_DECREASE,
+            pmid="18597780",
+            doi="10.1016/j.jmb.2008.05.062",
+            review_status=ReviewStatus.ACCEPTED,
+            review_notes="Table 1 values verified against PMC2754059.",
+            data_quality=DataQuality.CURATED,
+            experimental_method="in vitro purified enzyme",
+        ),
+        # HIV-1 protease D30N + nelfinavir: 2-6-fold Ki increase (NFV greatest).
+        # Clemente et al. 2003, Biochemistry 42:15029-35, abstract.
+        _case(
+            "HIV_D30N_NFV",
+            _HIV_ACC,
+            _HIV,
+            "HIV-1",
+            "D30N",
+            30,
+            "NFV",
+            "Nelfinavir",
+            assay_type=AssayType.KI,
+            wt_value=1.0,
+            mutant_value=6.0,
+            value_unit="fold_Ki",
+            effect_direction=EffectDirection.AFFINITY_DECREASE,
+            pmid="14690411",
+            doi="10.1021/bi035701y",
+            review_status=ReviewStatus.ACCEPTED,
+            review_notes="abstract reports a 2-6 fold range across inhibitors with "
+            "nelfinavir greatest; 6.0 recorded as the nelfinavir upper bound.",
+            data_quality=DataQuality.CURATED,
+            experimental_method="in vitro purified enzyme",
+        ),
+        # Human DHFR L22F + methotrexate: 88-fold MTX Ki increase.
+        # Ercikan-Abali et al. 1996, Mol Pharmacol 49:430-7.
+        _case(
+            "DHFR_L22F_MTX",
+            _DHFR_ACC,
+            _DHFR,
+            "Homo sapiens",
+            "L22F",
+            22,
+            "MTX",
+            "Methotrexate",
+            assay_type=AssayType.KI,
+            wt_value=1.0,
+            mutant_value=88.0,
+            value_unit="fold_Ki",
+            effect_direction=EffectDirection.AFFINITY_DECREASE,
+            wt_pdb="1u72.pdb",
+            pmid="8643082",
+            review_status=ReviewStatus.ACCEPTED,
+            review_notes="88-fold from the abstract (Ki); full-text table pending.",
+            data_quality=DataQuality.CURATED,
+            experimental_method="in vitro purified enzyme",
+        ),
+        # Human DHFR F31R + methotrexate: delta-delta-G 2.1 kcal/mol (35-fold).
+        # Volpato et al. 2009, J Biol Chem 284:20079-89, PMC2740434 Table 2.
+        _case(
+            "DHFR_F31R_MTX",
+            _DHFR_ACC,
+            _DHFR,
+            "Homo sapiens",
+            "F31R",
+            31,
+            "MTX",
+            "Methotrexate",
+            assay_type=AssayType.DELTA_G,
+            wt_value=0.0,
+            mutant_value=2.1,
+            value_unit="kcal/mol",
+            delta_delta_g=2.1,
+            effect_direction=EffectDirection.AFFINITY_DECREASE,
+            wt_pdb="1u72.pdb",
+            pmid="19478082",
+            review_status=ReviewStatus.ACCEPTED,
+            review_notes="delta-delta-G 2.1 kcal/mol read from PMC2740434 Table 2.",
+            data_quality=DataQuality.CURATED,
+            experimental_method="in vitro purified enzyme",
+        ),
     ]
-    for notation, wt, mut, pos, fold, direction in hiv_bulk:
-        cases.append(MutationLigandPair(
-            sample_id=f"HIV_{notation}_MK1",
-            protein_accession=_hiv_acc, protein_name=_hiv(), organism="HIV-1",
-            mutation_notation=notation, wt_residue=wt, mutant_residue=mut,
-            uniprot_position=pos, pdb_position=pos, pdb_chain="A",
-            ligand_id="MK1", ligand_name="MK1 inhibitor", ligand_role="inhibitor",
-            assay_type=AssayType.KI, wt_value=1.0, mutant_value=fold, value_unit="fold_Ki",
-            effect_direction=direction, wt_pdb="1sdt.cif",
-            review_notes=f"HIV bulk — {direction.value}.",
-            experimental_method="in vitro", pmid="11095614",
-            data_source="manual_curation", data_quality=DataQuality.CURATED,
-            review_status=ReviewStatus.ACCEPTED, split_group=_hiv_acc,
-        ))
-
-    # ---- DHFR: bulk fill neutral + increase (8 more cases) -------------------
-    dhfr_bulk = [
-        ("I7V", "I", "V", 7, 1.1, EffectDirection.APPROX_NEUTRAL),
-        ("V8A", "V", "A", 8, 1.2, EffectDirection.APPROX_NEUTRAL),
-        ("L13I", "L", "I", 13, 1.1, EffectDirection.APPROX_NEUTRAL),
-        ("R28K", "R", "K", 28, 1.3, EffectDirection.APPROX_NEUTRAL),
-        ("K55R", "K", "R", 55, 1.2, EffectDirection.APPROX_NEUTRAL),
-        ("T56S", "T", "S", 56, 1.1, EffectDirection.APPROX_NEUTRAL),
-        ("V115I", "V", "I", 115, 1.2, EffectDirection.APPROX_NEUTRAL),
-        ("D21N", "D", "N", 21, 0.8, EffectDirection.AFFINITY_INCREASE),
-    ]
-    for notation, wt, mut, pos, fold, direction in dhfr_bulk:
-        cases.append(MutationLigandPair(
-            sample_id=f"DHFR_{notation}_MTX",
-            protein_accession=_dhfr_acc, protein_name=_dhfr(), organism="Homo sapiens",
-            mutation_notation=notation, wt_residue=wt, mutant_residue=mut,
-            uniprot_position=pos, pdb_position=pos, pdb_chain="A",
-            ligand_id="MTX", ligand_name="Methotrexate", ligand_role="inhibitor",
-            assay_type=AssayType.KI, wt_value=1.0, mutant_value=fold, value_unit="fold_Ki",
-            effect_direction=direction, wt_pdb=_dhfr_wt,
-            review_notes=f"DHFR bulk — {direction.value}.",
-            experimental_method="in vitro", pmid="11527979",
-            data_source="manual_curation", data_quality=DataQuality.CURATED,
-            review_status=ReviewStatus.ACCEPTED, split_group=_dhfr_acc,
-        ))
-
-    # ---- Trypsin: bulk fill increase + neutral (8 more cases) ----------------
-    tryp_bulk = [
-        ("Y39F", "Y", "F", 39, 1.1, EffectDirection.APPROX_NEUTRAL),
-        ("F41Y", "F", "Y", 41, 1.2, EffectDirection.APPROX_NEUTRAL),
-        ("C42A", "C", "A", 42, 1.3, EffectDirection.APPROX_NEUTRAL),
-        ("H57N", "H", "N", 57, 500.0, EffectDirection.AFFINITY_DECREASE),
-        ("Y94F", "Y", "F", 94, 1.2, EffectDirection.APPROX_NEUTRAL),
-        ("L99I", "L", "I", 99, 1.1, EffectDirection.APPROX_NEUTRAL),
-        ("N143A", "N", "A", 143, 1.2, EffectDirection.APPROX_NEUTRAL),
-        ("V213I", "V", "I", 213, 1.1, EffectDirection.APPROX_NEUTRAL),
-    ]
-    for notation, wt, mut, pos, fold, direction in tryp_bulk:
-        cases.append(MutationLigandPair(
-            sample_id=f"TRYP_{notation}_BEN",
-            protein_accession=_tryp_acc, protein_name="Bovine Trypsin", organism="Bos taurus",
-            mutation_notation=notation, wt_residue=wt, mutant_residue=mut,
-            uniprot_position=pos, pdb_position=pos, pdb_chain="A",
-            ligand_id="BEN", ligand_name="Benzamidine", ligand_role="inhibitor",
-            assay_type=AssayType.KI, wt_value=1.0, mutant_value=fold, value_unit="fold_Ki",
-            effect_direction=direction, wt_pdb="3ptb.pdb",
-            review_notes=f"Trypsin bulk — {direction.value}.",
-            experimental_method="in vitro", pmid="3131872",
-            data_source="manual_curation", data_quality=DataQuality.CURATED,
-            review_status=ReviewStatus.ACCEPTED, split_group=_tryp_acc,
-        ))
-
-    # ---- BLAC: bulk fill decrease + neutral (8 more cases) -------------------
-    blac_bulk = [
-        ("T114A", "T", "A", 114, 1.2, EffectDirection.APPROX_NEUTRAL),
-        ("D115N", "D", "N", 115, 1.3, EffectDirection.APPROX_NEUTRAL),
-        ("N132A", "N", "A", 132, 1.1, EffectDirection.APPROX_NEUTRAL),
-        ("T181A", "T", "A", 181, 1.2, EffectDirection.APPROX_NEUTRAL),
-        ("D179N", "D", "N", 179, 1.3, EffectDirection.APPROX_NEUTRAL),
-        ("R161A", "R", "A", 161, 2.0, EffectDirection.AFFINITY_DECREASE),
-        ("D214N", "D", "N", 214, 1.3, EffectDirection.APPROX_NEUTRAL),
-        ("T265A", "T", "A", 265, 1.2, EffectDirection.APPROX_NEUTRAL),
-    ]
-    for notation, wt, mut, pos, fold, direction in blac_bulk:
-        cases.append(MutationLigandPair(
-            sample_id=f"BLAC_{notation}_PEN",
-            protein_accession=_blac_acc, protein_name=_blac(), organism="Escherichia coli",
-            mutation_notation=notation, wt_residue=wt, mutant_residue=mut,
-            uniprot_position=pos, pdb_position=pos, pdb_chain="A",
-            ligand_id="PEN", ligand_name="Penicillin G", ligand_role="substrate",
-            assay_type=AssayType.KI, wt_value=1.0, mutant_value=fold, value_unit="fold_Ki",
-            effect_direction=direction, wt_pdb="1btl.pdb",
-            review_notes=f"BLAC bulk — {direction.value}.",
-            experimental_method="in vitro", pmid="16189104",
-            data_source="manual_curation", data_quality=DataQuality.CURATED,
-            review_status=ReviewStatus.ACCEPTED, split_group=_blac_acc,
-        ))
-
-    # ---- Mpro: bulk fill neutral + increase (8 more cases) -------------------
-    mpro_bulk = [
-        ("M49A", "M", "A", 49, 1.3, EffectDirection.APPROX_NEUTRAL),
-        ("L50A", "L", "A", 50, 1.2, EffectDirection.APPROX_NEUTRAL),
-        ("F140A", "F", "A", 140, 1.3, EffectDirection.APPROX_NEUTRAL),
-        ("N142L", "N", "L", 142, 1.2, EffectDirection.APPROX_NEUTRAL),
-        ("E166Q", "E", "Q", 166, 15.0, EffectDirection.AFFINITY_DECREASE),
-        ("D187N", "D", "N", 187, 1.3, EffectDirection.APPROX_NEUTRAL),
-        ("R188K", "R", "K", 188, 1.2, EffectDirection.APPROX_NEUTRAL),
-        ("T190A", "T", "A", 190, 1.1, EffectDirection.APPROX_NEUTRAL),
-    ]
-    for notation, wt, mut, pos, fold, direction in mpro_bulk:
-        cases.append(MutationLigandPair(
-            sample_id=f"MPRO_{notation}_NIR",
-            protein_accession=_mpro_acc, protein_name="SARS-CoV-2 Mpro", organism="SARS-CoV-2",
-            mutation_notation=notation, wt_residue=wt, mutant_residue=mut,
-            uniprot_position=pos, pdb_position=pos, pdb_chain="A",
-            ligand_id="NIR", ligand_name="Nirmatrelvir", ligand_role="inhibitor",
-            assay_type=AssayType.KI, wt_value=1.0, mutant_value=fold, value_unit="fold_Ki",
-            effect_direction=direction, wt_pdb="6lu7.pdb",
-            review_notes=f"Mpro bulk — {direction.value}.",
-            experimental_method="in vitro FRET", pmid="32726803",
-            data_source="manual_curation", data_quality=DataQuality.CURATED,
-            review_status=ReviewStatus.ACCEPTED, split_group=_mpro_acc,
-        ))
-
-    # ---- Neuraminidase: bulk fill neutral (8 more cases) --------------------
-    neur_bulk = [
-        ("V116A", "V", "A", 116, 1.3, EffectDirection.APPROX_NEUTRAL),
-        ("D151N", "D", "N", 151, 1.2, EffectDirection.APPROX_NEUTRAL),
-        ("R152K", "R", "K", 152, 1.3, EffectDirection.APPROX_NEUTRAL),
-        ("Y155F", "Y", "F", 155, 1.2, EffectDirection.APPROX_NEUTRAL),
-        ("W178A", "W", "A", 178, 1.3, EffectDirection.APPROX_NEUTRAL),
-        ("S179A", "S", "A", 179, 1.2, EffectDirection.APPROX_NEUTRAL),
-        ("E227D", "E", "D", 227, 1.3, EffectDirection.APPROX_NEUTRAL),
-        ("R371K", "R", "K", 371, 1.2, EffectDirection.APPROX_NEUTRAL),
-    ]
-    for notation, wt, mut, pos, fold, direction in neur_bulk:
-        cases.append(MutationLigandPair(
-            sample_id=f"NEUR_{notation}_OSL",
-            protein_accession=_neur, protein_name="Influenza Neuraminidase", organism="Influenza A virus",
-            mutation_notation=notation, wt_residue=wt, mutant_residue=mut,
-            uniprot_position=pos, pdb_position=pos, pdb_chain="A",
-            ligand_id="OSL", ligand_name="Oseltamivir", ligand_role="inhibitor",
-            assay_type=AssayType.KI, wt_value=1.0, mutant_value=fold, value_unit="fold_Ki",
-            effect_direction=direction, wt_pdb="2hu4.pdb",
-            review_notes=f"Neuraminidase bulk — {direction.value}.",
-            experimental_method="in vitro", pmid="16954204",
-            data_source="manual_curation", data_quality=DataQuality.CURATED,
-            review_status=ReviewStatus.ACCEPTED, split_group=_neur,
-        ))
-
     return cases
 
 
+# ===========================================================================
+# Pending cases — legitimate source identified, exact value needs full text
+# ===========================================================================
+
+
+def _pending() -> list[MutationLigandPair]:
+    cases = [
+        # Mahalingam et al. 1999, Eur J Biochem 263:238-45 — abstract covers
+        # catalytic activity only; SQV Ki fold values need the full-text Table II.
+        _case(
+            "HIV_L90M_SQV",
+            _HIV_ACC,
+            _HIV,
+            "HIV-1",
+            "L90M",
+            90,
+            "SQV",
+            "Saquinavir",
+            assay_type=AssayType.KI,
+            wt_value=0.033,
+            mutant_value=0.68,
+            value_unit="nM",
+            effect_direction=EffectDirection.AFFINITY_DECREASE,
+            pmid="10429209",
+            doi="10.1046/j.1432-1327.1999.00514.x",
+            review_status=ReviewStatus.PENDING,
+            review_notes="Table II values not yet verified against full text.",
+            data_quality=DataQuality.UNVERIFIED,
+        ),
+        _case(
+            "HIV_G48V_SQV_MAHALINGAM1999",
+            _HIV_ACC,
+            _HIV,
+            "HIV-1",
+            "G48V",
+            48,
+            "SQV",
+            "Saquinavir",
+            assay_type=AssayType.KI,
+            wt_value=0.033,
+            mutant_value=5.4,
+            value_unit="nM",
+            effect_direction=EffectDirection.AFFINITY_DECREASE,
+            pmid="10429209",
+            doi="10.1046/j.1432-1327.1999.00514.x",
+            review_status=ReviewStatus.PENDING,
+            review_notes="Table II values not yet verified against full text.",
+            data_quality=DataQuality.UNVERIFIED,
+        ),
+        _case(
+            "HIV_G48V_L90M_SQV",
+            _HIV_ACC,
+            _HIV,
+            "HIV-1",
+            "G48V+L90M",
+            48,
+            "SQV",
+            "Saquinavir",
+            assay_type=AssayType.KI,
+            wt_value=0.033,
+            mutant_value=33.0,
+            value_unit="nM",
+            effect_direction=EffectDirection.AFFINITY_DECREASE,
+            pmid="10429209",
+            doi="10.1046/j.1432-1327.1999.00514.x",
+            review_status=ReviewStatus.PENDING,
+            review_notes="double-mutant Ki; Table II values not yet verified.",
+            data_quality=DataQuality.UNVERIFIED,
+        ),
+        # Structure pair 1U72/1DLS verified (L22Y + MTX); the exact numeric
+        # effect on MTX binding still needs a full-text table.
+        _case(
+            "DHFR_L22Y_MTX",
+            _DHFR_ACC,
+            _DHFR,
+            "Homo sapiens",
+            "L22Y",
+            22,
+            "MTX",
+            "Methotrexate",
+            assay_type=AssayType.KI,
+            wt_value=None,
+            mutant_value=None,
+            value_unit="",
+            effect_direction=EffectDirection.AFFINITY_DECREASE,
+            wt_pdb="1u72.pdb",
+            mutant_pdb="1dls.pdb",
+            pmid="7890613",
+            review_status=ReviewStatus.PENDING,
+            review_notes="structure pair verified (1U72 WT / 1DLS L22Y, both + MTX); "
+            "numeric binding value pending full-text verification.",
+            data_quality=DataQuality.UNVERIFIED,
+        ),
+        # EGFR C797S + gefitinib: source corrected to Thress et al. 2015
+        # (Nat Med 21:560-2); the 80-fold figure itself still needs the
+        # full text.
+        _case(
+            "EGFR_C797S_IRE",
+            _EGFR_ACC,
+            _EGFR,
+            "Homo sapiens",
+            "C797S",
+            797,
+            "IRE",
+            "Gefitinib",
+            assay_type=AssayType.KI,
+            wt_value=None,
+            mutant_value=None,
+            value_unit="",
+            effect_direction=EffectDirection.AFFINITY_DECREASE,
+            pmid="25939061",
+            review_status=ReviewStatus.PENDING,
+            review_notes="source corrected to PMID 25939061 (Thress 2015); "
+            "numeric fold pending full-text verification.",
+            data_quality=DataQuality.UNVERIFIED,
+        ),
+    ]
+    return cases
+
+
+# ===========================================================================
+# Rejected cases — kept for the audit trail, must never enter training
+# ===========================================================================
+
+
+def _rejected() -> list[MutationLigandPair]:
+    rejected: list[MutationLigandPair] = []
+
+    def add(
+        sample_id: str,
+        notation: str,
+        position: int,
+        ligand: str,
+        lname: str,
+        accession: str,
+        protein: str,
+        organism: str,
+        reason: str,
+        wt_pdb: str = "",
+    ) -> None:
+        rejected.append(
+            _case(
+                sample_id,
+                accession,
+                protein,
+                organism,
+                notation,
+                position,
+                ligand,
+                lname,
+                assay_type=AssayType.KI,
+                wt_value=None,
+                mutant_value=None,
+                value_unit="",
+                wt_pdb=wt_pdb,
+                review_status=ReviewStatus.REJECTED,
+                rejection_reason=reason,
+            )
+        )
+
+    # --- HIV-1 protease: cited PMIDs unrelated to the claims --------------
+    _hiv_wrong = [
+        (
+            "HIV_V82A_DRV",
+            "V82A",
+            82,
+            "DRV",
+            "Darunavir",
+            "PMID 12730686 is cyclophilin A; structure ligand (MK1) != assay ligand",
+        ),
+        (
+            "HIV_I84V_DRV",
+            "I84V",
+            84,
+            "DRV",
+            "Darunavir",
+            "PMID 15632378 is CYP2D6/tamoxifen; single-I84V Ki source not found",
+        ),
+        ("HIV_I50V_APV", "I50V", 50, "APV", "Amprenavir", "PMID 10681379 unrelated (cocaine metabolites)"),
+        ("HIV_D30N_NFV_OLD", "D30N", 30, "NFV", "Nelfinavir", "PMID 9149701 unrelated (prostacyclin)"),
+        ("HIV_G48V_SQV_OLD", "G48V", 48, "SQV", "Saquinavir", "PMID 7540751 unrelated (nursing humanities)"),
+        ("HIV_L90M_SQV_OLD", "L90M", 90, "SQV", "Saquinavir", "PMID 7540751 unrelated (nursing humanities)"),
+        ("HIV_I54V_IDV", "I54V", 54, "IDV", "Indinavir", "PMID 8810284 unrelated (chick collagen)"),
+        ("HIV_I54M_IDV", "I54M", 54, "IDV", "Indinavir", "PMID 8810284 unrelated (chick collagen)"),
+        ("HIV_V32I_IDV", "V32I", 32, "IDV", "Indinavir", "PMID 8810284 unrelated (chick collagen)"),
+        ("HIV_M46I_IDV", "M46I", 46, "IDV", "Indinavir", "PMID 8810284 unrelated (chick collagen)"),
+        (
+            "HIV_N88S_IDV",
+            "N88S",
+            88,
+            "IDV",
+            "Indinavir",
+            "PMID 11502742 unrelated (occludin); N88S hypersensitivity is documented for "
+            "amprenavir, not indinavir",
+        ),
+        ("HIV_K20I_IDV", "K20I", 20, "IDV", "Indinavir", "PMID 11502742 unrelated (occludin)"),
+        ("HIV_L63P_IDV", "L63P", 63, "IDV", "Indinavir", "PMID 11095614 unrelated (corneal MMP)"),
+        ("HIV_I93L_IDV", "I93L", 93, "IDV", "Indinavir", "PMID 11095614 unrelated (corneal MMP)"),
+    ]
+    for sid, notation, pos, lig, lname, reason in _hiv_wrong:
+        add(
+            sid,
+            notation,
+            pos,
+            lig,
+            lname,
+            _HIV_ACC,
+            _HIV,
+            "HIV-1",
+            reason,
+            wt_pdb="1sdt.cif" if sid != "HIV_D30N_NFV_OLD" else "",
+        )
+
+    # --- HIV-1 protease bulk fill (fabricated 1.1-1.3x folds) -------------
+    for notation, pos in [
+        ("V11I", 11),
+        ("T12S", 12),
+        ("I15V", 15),
+        ("E35D", 35),
+        ("S37N", 37),
+        ("R41K", 41),
+        ("K55R", 55),
+        ("Q61E", 61),
+        ("I72V", 72),
+        ("T74S", 74),
+    ]:
+        add(
+            f"HIV_{notation}_MK1",
+            notation,
+            pos,
+            "MK1",
+            "MK1 inhibitor",
+            _HIV_ACC,
+            _HIV,
+            "HIV-1",
+            "bulk quota-fill row; PMID 11095614 unrelated; fold value fabricated",
+            wt_pdb="1sdt.cif",
+        )
+
+    # --- DHFR: wrong PMIDs and fabricated values --------------------------
+    _dhfr_wrong = [
+        ("DHFR_S118A_MTX", "S118A", 118, "PMID 11527979 unrelated (Wilson ATPase chimeras)"),
+        ("DHFR_G116A_MTX", "G116A", 116, "PMID 11527979 unrelated"),
+        (
+            "DHFR_Q35E_MTX",
+            "Q35E",
+            35,
+            "PMID 11258910 unrelated; Volpato 2009 reports Q35E = affinity "
+            "DECREASE (1.5x), opposite of recorded",
+        ),
+        ("DHFR_E30A_MTX", "E30A", 30, "PMID 11527979 unrelated"),
+        ("DHFR_F31S_MTX", "F31S", 31, "PMID 11258910 unrelated; F31S value not found in literature"),
+    ]
+    for sid, notation, pos, reason in _dhfr_wrong:
+        add(
+            sid,
+            notation,
+            pos,
+            "MTX",
+            "Methotrexate",
+            _DHFR_ACC,
+            _DHFR,
+            "Homo sapiens",
+            reason,
+            wt_pdb="1u72.pdb",
+        )
+    for notation, pos in [
+        ("I7V", 7),
+        ("V8A", 8),
+        ("L13I", 13),
+        ("R28K", 28),
+        ("K55R", 55),
+        ("T56S", 56),
+        ("V115I", 115),
+        ("D21N", 21),
+    ]:
+        add(
+            f"DHFR_{notation}_MTX",
+            notation,
+            pos,
+            "MTX",
+            "Methotrexate",
+            _DHFR_ACC,
+            _DHFR,
+            "Homo sapiens",
+            "bulk quota-fill row; PMID 11527979 unrelated; fold value fabricated",
+            wt_pdb="1u72.pdb",
+        )
+
+    # --- TEM-1 beta-lactamase: 1btl.pdb has no ligand; PMIDs unrelated ----
+    for sid, notation, pos in [
+        ("BLAC_S70A_PEN", "S70A", 70),
+        ("BLAC_S130A_PEN", "S130A", 130),
+        ("BLAC_E166A_PEN", "E166A", 166),
+        ("BLAC_K73A_PEN", "K73A", 73),
+        ("BLAC_E104A_PEN", "E104A", 104),
+    ]:
+        add(
+            sid,
+            notation,
+            pos,
+            "PEN",
+            "Penicillin G",
+            _BLAC_ACC,
+            _BLAC,
+            "Escherichia coli",
+            "PMID 2205042 unrelated (pig parasites); structure 1btl.pdb contains no ligand; "
+            "catalytic-residue alanine mutants do not increase substrate affinity",
+            wt_pdb="1btl.pdb",
+        )
+    for sid, notation, pos, reason in [
+        ("BLAC_G238S_PEN", "G238S", 238, "PMID 16189104 studies AmpC, not TEM-1"),
+        ("BLAC_R244S_PEN", "R244S", 244, "PMID 16189104 studies AmpC, not TEM-1"),
+        ("BLAC_A237G_PEN", "A237G", 237, "PMID 16189104 studies AmpC, not TEM-1"),
+    ]:
+        add(
+            sid,
+            notation,
+            pos,
+            "PEN",
+            "Penicillin G",
+            _BLAC_ACC,
+            _BLAC,
+            "Escherichia coli",
+            reason,
+            wt_pdb="1btl.pdb",
+        )
+    for notation, pos in [
+        ("T114A", 114),
+        ("D115N", 115),
+        ("N132A", 132),
+        ("T181A", 181),
+        ("D179N", 179),
+        ("R161A", 161),
+        ("D214N", 214),
+        ("T265A", 265),
+    ]:
+        add(
+            f"BLAC_{notation}_PEN",
+            notation,
+            pos,
+            "PEN",
+            "Penicillin G",
+            _BLAC_ACC,
+            _BLAC,
+            "Escherichia coli",
+            "bulk quota-fill row; PMID 16189104 unrelated; structure has no ligand",
+            wt_pdb="1btl.pdb",
+        )
+
+    # --- Trypsin: single wrong PMID covers all 16 -------------------------
+    _tryp_mutations = [
+        ("D189S", 189),
+        ("G193A", 193),
+        ("S195A", 195),
+        ("G216A", 216),
+        ("G226A", 226),
+        ("K60A", 60),
+        ("H57A", 57),
+        ("D102N", 102),
+        ("Y39F", 39),
+        ("F41Y", 41),
+        ("C42A", 42),
+        ("H57N", 57),
+        ("Y94F", 94),
+        ("L99I", 99),
+        ("N143A", 143),
+        ("V213I", 213),
+    ]
+    for notation, pos in _tryp_mutations:
+        add(
+            f"TRYP_{notation}_BEN",
+            notation,
+            pos,
+            "BEN",
+            "Benzamidine",
+            _TRYP_ACC,
+            _TRYP,
+            "Bos taurus",
+            "PMID 3131872 unrelated (German oxygen-therapy review); fold values fabricated",
+            wt_pdb="3ptb.pdb",
+        )
+
+    # --- SARS-CoV-2 Mpro: ligand N3 != nirmatrelvir, PMID is PLpro paper --
+    _mpro_mutations = [
+        ("H41A", 41),
+        ("C145A", 145),
+        ("E166A", 166),
+        ("Q189A", 189),
+        ("T25A", 25),
+        ("N142A", 142),
+        ("G143A", 143),
+        ("S144A", 144),
+        ("M49A", 49),
+        ("L50A", 50),
+        ("F140A", 140),
+        ("N142L", 142),
+        ("E166Q", 166),
+        ("D187N", 187),
+        ("R188K", 188),
+        ("T190A", 190),
+    ]
+    for notation, pos in _mpro_mutations:
+        add(
+            f"MPRO_{notation}_NIR",
+            notation,
+            pos,
+            "NIR",
+            "Nirmatrelvir",
+            _MPRO_ACC,
+            _MPRO,
+            "SARS-CoV-2",
+            "PMID 32726803 is a PLpro (not Mpro) paper; 6lu7.pdb ligand is N3, "
+            "not nirmatrelvir; 'NIR' is a wrong CCD code; fold values fabricated",
+            wt_pdb="6lu7.pdb",
+        )
+
+    # --- Influenza neuraminidase: mixed subtypes/accessions, wrong CCD ----
+    _neur_mutations = [
+        ("H275Y", 275),
+        ("E119V", 119),
+        ("R292K", 292),
+        ("N294S", 294),
+        ("I223R", 223),
+        ("V116A", 116),
+        ("D151N", 151),
+        ("R152K", 152),
+        ("Y155F", 155),
+        ("W178A", 178),
+        ("S179A", 179),
+        ("E227D", 227),
+        ("R371K", 371),
+    ]
+    for notation, pos in _neur_mutations:
+        add(
+            f"NEUR_{notation}_OSL",
+            notation,
+            pos,
+            "OSL",
+            "Oseltamivir",
+            _NEUR_ACC,
+            _NEUR,
+            "Influenza A virus",
+            "PMID 16954204 unrelated (Derlin-1/CFTR); 2hu4.pdb is an engineered "
+            "H5N1 N1 (H233Y/H252Y, accession Q6DPL2, not P03468) and does NOT "
+            "contain H275Y; 'OSL' is a wrong CCD code; fold values fabricated",
+            wt_pdb="2hu4.pdb",
+        )
+
+    # --- EGFR / ABL1: real-but-unsupporting PMIDs, values without source --
+    _egfr_mutations = [
+        ("T790M", 790, "IRE", "Gefitinib", "Lynch 2004 reports sensitizing mutations; T790M not in it"),
+        ("T790M", 790, "ERL", "Erlotinib", "Lynch 2004 reports sensitizing mutations; T790M not in it"),
+        ("L858R", 858, "IRE", "Gefitinib", "Lynch 2004 has no fold table; value without source"),
+        ("G719S", 719, "IRE", "Gefitinib", "Lynch 2004 has no fold table; value without source"),
+        ("V765M", 765, "IRE", "Gefitinib", "no literature source for V765M fold"),
+    ]
+    for notation, pos, lig, lname, reason in _egfr_mutations:
+        add(f"EGFR_{notation}_{lig}", notation, pos, lig, lname, _EGFR_ACC, _EGFR, "Homo sapiens", reason)
+
+    _abl_mutations = [
+        ("T315I", 315, 100.0),
+        ("E255K", 255, 30.0),
+        ("F317L", 317, 15.0),
+        ("Y253H", 253, 20.0),
+        ("M351T", 351, 3.0),
+        ("E255V", 255, 25.0),
+        ("H396P", 396, 4.0),
+        ("L248V", 248, 1.5),
+        ("G250E", 250, 2.0),
+        ("Q252H", 252, 8.0),
+    ]
+    for notation, pos, _fold in _abl_mutations:
+        add(
+            f"ABL1_{notation}_STI",
+            notation,
+            pos,
+            "STI",
+            "Imatinib",
+            _ABL_ACC,
+            _ABL,
+            "Homo sapiens",
+            "PMID 11964322 is a patient mutation survey with no fold values; recorded folds have no source",
+        )
+
+    return rejected
+
+
 def get_dataset_summary() -> dict:
-    """Return a summary of the golden dataset."""
+    """Return a summary of the case inventory by review status."""
     cases = load_golden_cases()
-    proteins = {}
-    directions = {}
+    proteins: dict[str, int] = {}
+    directions: dict[str, int] = {}
+    statuses: dict[str, int] = {}
     has_structure = 0
-    has_ddg = 0
     for c in cases:
         proteins[c.protein_name] = proteins.get(c.protein_name, 0) + 1
         directions[c.effect_direction.value] = directions.get(c.effect_direction.value, 0) + 1
+        statuses[c.review_status.value] = statuses.get(c.review_status.value, 0) + 1
         if c.wt_pdb and c.mutant_pdb:
             has_structure += 1
-        if c.delta_delta_g is not None:
-            has_ddg += 1
 
     return {
         "total": len(cases),
+        "review_statuses": statuses,
+        "verified": statuses.get("accepted", 0),
         "proteins": proteins,
         "effect_directions": directions,
         "has_structure_pair": has_structure,
-        "has_ddg": has_ddg,
         "data_quality": {
             "curated": sum(1 for c in cases if c.data_quality.value == "curated"),
             "reported": sum(1 for c in cases if c.data_quality.value == "reported"),
+            "unverified": sum(1 for c in cases if c.data_quality.value == "unverified"),
         },
     }
