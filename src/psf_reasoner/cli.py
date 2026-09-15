@@ -21,7 +21,6 @@ app = typer.Typer(
     help="Bidirectional physical-structural-functional reasoning.",
     no_args_is_help=True,
 )
-_runner = create_default_runner()
 
 StructureOption = Annotated[
     Path,
@@ -122,7 +121,7 @@ def batch(
 
     data = json.loads(manifest.read_text())
     parsed = BatchManifest.model_validate(data)
-    runner = BatchRunner(_runner)
+    runner = BatchRunner(create_default_runner())
     result = runner.run(parsed)
 
     typer.echo(json.dumps(result.model_dump(mode="json"), indent=2, sort_keys=True))
@@ -131,7 +130,7 @@ def batch(
 
 def _write_report(request: AnalysisRequest) -> None:
     try:
-        report = _runner.run(request)
+        report = create_default_runner().run(request)
     except StructureInputError as error:
         typer.echo(f"error: {error}", err=True)
         raise typer.Exit(code=2) from error
