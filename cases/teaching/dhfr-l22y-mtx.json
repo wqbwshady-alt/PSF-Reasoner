@@ -19,14 +19,14 @@
   },
   "structures": {
     "wild_type": {
-      "pdb_id": "1U72", "file": "examples/data/1u72.pdb",
+      "pdb_id": "1U72", "file": "examples/data/1U72.pdb",
       "method": "X-ray", "resolution_a": 1.9,
       "ligands": [{"id": "MTX", "role": "inhibitor"}, {"id": "NDP", "role": "cofactor"}],
       "background_mutations": [],
       "quality_notes": "野生型 DHFR + MTX + NADPH。"
     },
     "mutant": {
-      "pdb_id": "1DLS", "file": "examples/data/1dls.pdb",
+      "pdb_id": "1DLS", "file": "examples/data/1DLS.pdb",
       "method": "X-ray", "resolution_a": 2.3,
       "ligands": [{"id": "MTX", "role": "inhibitor"}, {"id": "NDP", "role": "cofactor"}],
       "background_mutations": ["L22Y"],
@@ -84,7 +84,7 @@
       "学会在数值缺失时用方向性证据+结构证据支撑结论"
     ],
     "observation_tasks": [
-      "运行 L22Y 分析（WT=1u72.pdb，mutant=1dls.pdb，ligand=MTX，mutation=L22Y，chain=A）",
+      "运行 L22Y 分析（WT=1U72.pdb，mutant=1DLS.pdb，ligand=MTX，mutation=L22Y，chain=A）",
       "比较 3D 视图中 Leu22 与 Tyr22 侧链的朝向差异",
       "找出 Structural Context 中体积、极性、芳香性三项变化"
     ],
@@ -111,6 +111,6 @@
       "酚羟基与蝶啶环的具体空间冲突模式（需逐原子检查）",
       "口袋构象扰动幅度（需 RMSD/口袋体积定量）"
     ],
-    "run_instructions": "网页工作台：WT=examples/data/1u72.pdb，突变体=examples/data/1dls.pdb，配体 MTX，突变 L22Y，链 A。注意：1dls.pdb 中的 MTX 位于指定链，若配体定位报歧义请补充配体链信息。"
+    "run_instructions": "网页工作台：WT=examples/data/1U72.pdb，突变体=examples/data/1DLS.pdb，配体 MTX，突变 L22Y，链 A。注意：1DLS.pdb 中的 MTX 位于指定链，若配体定位报歧义请补充配体链信息。"
   }
 }

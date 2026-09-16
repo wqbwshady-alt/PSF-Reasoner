@@ -107,4 +107,8 @@ def test_structure_files_exist() -> None:
             if not structure:
                 continue
             path = root / structure["file"]
-            assert path.exists(), f"{case_id}: {structure['file']} missing"
+            actual_names = {entry.name for entry in path.parent.iterdir()}
+            assert path.name in actual_names, (
+                f"{case_id}: {structure['file']} does not match the on-disk filename case"
+            )
+            assert path.is_file(), f"{case_id}: {structure['file']} missing"
