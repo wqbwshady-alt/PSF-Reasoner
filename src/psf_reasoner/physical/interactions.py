@@ -249,8 +249,7 @@ def _type_ligand_atom(
     likely_donor = n_donor or os_donor
     # Carbons bonded to O/N are polar, not hydrophobic (aligned with PLIP)
     ligand_hydrophobic = (
-        is_carbon
-        and not any(neighbor.element in {"O", "N"} for neighbor in neighbors)
+        is_carbon and not any(neighbor.element in {"O", "N"} for neighbor in neighbors)
     ) or atom.element in {"CL", "BR", "I", "F"}
     # Nitrogen with <3 heavy neighbours is protonatable → potential positive
     # (aligned with PLIP's OpenBabel-based charge assignment at phys. pH)
@@ -589,9 +588,7 @@ def cutoff_sensitivity_analysis(
             HYDROGEN_BOND_CUTOFF_ANGSTROM = cutoff
             # Re-run analysis for this residue-ligand pair
             result = analyze_typed_interactions(residue, ligand, waters)
-            hbond_counts.append(
-                sum(item.interaction_type == "hydrogen_bond" for item in result.interactions)
-            )
+            hbond_counts.append(sum(item.interaction_type == "hydrogen_bond" for item in result.interactions))
 
         for cutoff in hydrophobic_cutoffs:
             HYDROPHOBIC_CUTOFF_ANGSTROM = cutoff
@@ -603,16 +600,12 @@ def cutoff_sensitivity_analysis(
         for cutoff in salt_bridge_cutoffs:
             SALT_BRIDGE_CUTOFF_ANGSTROM = cutoff
             result = analyze_typed_interactions(residue, ligand, waters)
-            salt_counts.append(
-                sum(item.interaction_type == "salt_bridge" for item in result.interactions)
-            )
+            salt_counts.append(sum(item.interaction_type == "salt_bridge" for item in result.interactions))
 
         for cutoff in pi_cutoffs:
             PI_CENTROID_CUTOFF_ANGSTROM = cutoff
             result = analyze_typed_interactions(residue, ligand, waters)
-            pi_counts.append(
-                sum(item.interaction_type == "pi_interaction" for item in result.interactions)
-            )
+            pi_counts.append(sum(item.interaction_type == "pi_interaction" for item in result.interactions))
     finally:
         HYDROGEN_BOND_CUTOFF_ANGSTROM = original_hbond
         HYDROPHOBIC_CUTOFF_ANGSTROM = original_hydrophobic

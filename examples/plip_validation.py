@@ -25,9 +25,7 @@ def main() -> None:
         plip_residues = comparison.plip_hydrophobic_residues
         results[pdb_id.upper()] = {
             "structure_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-            "psf_counts": {
-                item.interaction_type: item.psf_count for item in comparison.by_type
-            },
+            "psf_counts": {item.interaction_type: item.psf_count for item in comparison.by_type},
             "plip_counts": comparison.plip_counts,
             "hydrophobic_residue_precision": comparison.hydrophobic_residue_precision,
             "hydrophobic_residue_recall": comparison.hydrophobic_residue_recall,

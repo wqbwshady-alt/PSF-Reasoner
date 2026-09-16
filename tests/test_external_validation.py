@@ -14,6 +14,7 @@ from psf_reasoner.physical.interactions import InteractionCounts
 def _plip_available() -> bool:
     try:
         import plip  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -72,8 +73,11 @@ class TestInteractionComparison:
 class TestSystematicDifferences:
     def test_all_interaction_types_have_notes(self) -> None:
         expected_types = {
-            "hydrogen_bond", "hydrophobic_contact", "salt_bridge",
-            "pi_interaction", "water_bridge",
+            "hydrogen_bond",
+            "hydrophobic_contact",
+            "salt_bridge",
+            "pi_interaction",
+            "water_bridge",
         }
         assert expected_types <= set(_SYSTEMATIC_DIFFERENCES)
 

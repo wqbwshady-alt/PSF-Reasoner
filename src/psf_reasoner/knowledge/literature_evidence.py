@@ -64,8 +64,7 @@ _register(
                 "against indinavir (MK1), i.e. increased susceptibility."
             ),
             structured_claim=(
-                "L90M increases susceptibility to indinavir (~0.16-fold Ki), "
-                "contrasting with V82A."
+                "L90M increases susceptibility to indinavir (~0.16-fold Ki), contrasting with V82A."
             ),
             experimental_system="in vitro purified enzyme",
             notes="fold verified from the abstract.",
@@ -84,8 +83,7 @@ _register(
                 "(Table 1), an 86-fold loss of binding."
             ),
             structured_claim=(
-                "G48V perturbs the flap region and strongly reduces "
-                "saquinavir binding (86-fold Ki increase)."
+                "G48V perturbs the flap region and strongly reduces saquinavir binding (86-fold Ki increase)."
             ),
             experimental_system="in vitro purified enzyme",
             notes="Table 1 values verified against PMC2754059.",
@@ -147,8 +145,7 @@ _register(
                 "resistance to gefitinib and erlotinib in NSCLC."
             ),
             structured_claim=(
-                "T790M gatekeeper mutation confers acquired resistance "
-                "to first-generation EGFR inhibitors."
+                "T790M gatekeeper mutation confers acquired resistance to first-generation EGFR inhibitors."
             ),
             experimental_system="clinical samples + cell-based assays",
             notes="PMID 15728811 (Kobayashi 2005) and 15737014 (Pao 2005) both "
@@ -165,8 +162,7 @@ _register(
                 "Osimertinib (AZD9291) is effective in NSCLC with the EGFR T790M resistance mutation."
             ),
             structured_claim=(
-                "Third-generation irreversible inhibitors (osimertinib) "
-                "overcome T790M-mediated resistance."
+                "Third-generation irreversible inhibitors (osimertinib) overcome T790M-mediated resistance."
             ),
             experimental_system="clinical trial + cell-based assays",
         ),

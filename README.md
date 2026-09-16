@@ -64,10 +64,17 @@ modelled. Unsupported mutations fall back to reference-only evidence instead of
 fabricating coordinates. Local scores are reproducible structure-derived scores,
 not binding free energies.
 
-The built-in HIV-1 protease calibration currently covers the MK1-bound V82A case
+The built-in HIV-1 protease heuristic currently covers the MK1-bound V82A case
 using the public RCSB 1SDT/1SDV structural benchmark and its primary literature
-label. The label is qualitative and records provenance; it is not a numeric Ki,
+label. The label is qualitative and uncalibrated; it is not a numeric Ki,
 Kd, IC50, or resistance fold-change substitute.
+
+The September 2026 evidence audit retains nine literature-verified cases for
+evaluation and excludes unverified records from calibration inputs. The first
+end-to-end verified example is V82A/MK1. An independent PLIP comparison on
+1SDT, 1SDV, and 1SDU is documented in `docs/interaction-validation.md`;
+hydrogen bonds remain under-detected in the distributed crystal files, and
+the three related structures do not establish cross-system accuracy.
 
 ## Architecture
 

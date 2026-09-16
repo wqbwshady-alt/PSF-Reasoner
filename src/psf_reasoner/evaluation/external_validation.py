@@ -99,10 +99,7 @@ def _run_plip_with_residues(pdb_path: Path, ligand_id: str) -> tuple[dict[str, i
 
     # PLIP identifies ligands by "RES:CHAIN:NUM" (e.g., "MK1:B:902").
     # Match by residue name prefix.
-    matching = [
-        v for k, v in mol.interaction_sets.items()
-        if k.split(":")[0].upper() == ligand_id.upper()
-    ]
+    matching = [v for k, v in mol.interaction_sets.items() if k.split(":")[0].upper() == ligand_id.upper()]
     if not matching:
         raise ValueError(f"PLIP did not identify ligand {ligand_id} in {pdb_path}")
     if len(matching) > 1:
@@ -110,23 +107,16 @@ def _run_plip_with_residues(pdb_path: Path, ligand_id: str) -> tuple[dict[str, i
     interactions = matching[0]
 
     counts = {
-        "hydrogen_bond": (
-            len(interactions.hbonds_pdon) + len(interactions.hbonds_ldon)
-        ),
+        "hydrogen_bond": (len(interactions.hbonds_pdon) + len(interactions.hbonds_ldon)),
         "hydrophobic_contact": len(interactions.hydrophobic_contacts),
-        "salt_bridge": (
-            len(interactions.saltbridge_lneg) + len(interactions.saltbridge_pneg)
-        ),
+        "salt_bridge": (len(interactions.saltbridge_lneg) + len(interactions.saltbridge_pneg)),
         "pi_stacking": len(interactions.pistacking),
-        "pi_cation": (
-            len(interactions.pication_laro) + len(interactions.pication_paro)
-        ),
+        "pi_cation": (len(interactions.pication_laro) + len(interactions.pication_paro)),
         "water_bridge": len(interactions.water_bridges),
         "halogen_bond": len(interactions.halogen_bonds),
     }
     hydrophobic_residues = frozenset(
-        f"{event.reschain}:{event.restype}{event.resnr}"
-        for event in interactions.hydrophobic_contacts
+        f"{event.reschain}:{event.restype}{event.resnr}" for event in interactions.hydrophobic_contacts
     )
     return counts, hydrophobic_residues
 
@@ -141,9 +131,7 @@ _SYSTEMATIC_DIFFERENCES: dict[str, str] = {
         "PSF counts every qualifying atom pair within 4.0 A. PLIP filters "
         "hydrophobic events differently. Compare residue presence as well as raw counts."
     ),
-    "salt_bridge": (
-        "PSF uses charged atom pairs within 5.5 A; PLIP uses charge-group centers."
-    ),
+    "salt_bridge": ("PSF uses charged atom pairs within 5.5 A; PLIP uses charge-group centers."),
     "pi_interaction": (
         "PSF uses a single 'pi_interaction' category based on aromatic residue atom "
         "tables and centroid distance (5.5 A). PLIP distinguishes pi-stacking "
