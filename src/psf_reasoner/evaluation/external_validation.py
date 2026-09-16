@@ -37,11 +37,32 @@ class InteractionComparison:
     psf_counts: InteractionCounts
     plip_counts: dict[str, int] = field(default_factory=dict)
     by_type: list[PerTypeAgreement] = field(default_factory=list)
+    psf_hydrophobic_residues: frozenset[str] = frozenset()
+    plip_hydrophobic_residues: frozenset[str] = frozenset()
 
     @property
     def total_agreement_rate(self) -> float:
+        """Fraction of categories with equal raw counts, not scientific accuracy."""
         matching = sum(1 for a in self.by_type if a.match)
         return matching / len(self.by_type) if self.by_type else 0.0
+
+    @property
+    def hydrophobic_residue_precision(self) -> float | None:
+        """Fraction of PSF-positive protein residues also found by PLIP."""
+        if not self.psf_hydrophobic_residues:
+            return None
+        return len(self.psf_hydrophobic_residues & self.plip_hydrophobic_residues) / len(
+            self.psf_hydrophobic_residues
+        )
+
+    @property
+    def hydrophobic_residue_recall(self) -> float | None:
+        """Fraction of PLIP-positive protein residues also found by PSF."""
+        if not self.plip_hydrophobic_residues:
+            return None
+        return len(self.psf_hydrophobic_residues & self.plip_hydrophobic_residues) / len(
+            self.plip_hydrophobic_residues
+        )
 
 
 def run_plip_on_structure(pdb_path: Path, ligand_id: str) -> dict[str, int]:
@@ -59,12 +80,18 @@ def run_plip_on_structure(pdb_path: Path, ligand_id: str) -> dict[str, int]:
       - water_bridge (water_bridges)
       - halogen_bond (halogen_bonds)
     """
+    counts, _ = _run_plip_with_residues(pdb_path, ligand_id)
+    return counts
+
+
+def _run_plip_with_residues(pdb_path: Path, ligand_id: str) -> tuple[dict[str, int], frozenset[str]]:
+    """Return PLIP event counts and protein residues with hydrophobic contacts."""
     try:
         from plip.structure.preparation import PDBComplex
-    except ImportError:
+    except ImportError as error:
         raise ImportError(
             "PLIP is required for external validation.  Install with: pip install plip"
-        )
+        ) from error
 
     mol = PDBComplex()
     mol.load_pdb(str(pdb_path))
@@ -77,10 +104,12 @@ def run_plip_on_structure(pdb_path: Path, ligand_id: str) -> dict[str, int]:
         if k.split(":")[0].upper() == ligand_id.upper()
     ]
     if not matching:
-        return {}
+        raise ValueError(f"PLIP did not identify ligand {ligand_id} in {pdb_path}")
+    if len(matching) > 1:
+        raise ValueError(f"PLIP identified multiple {ligand_id} ligands in {pdb_path}; select one")
     interactions = matching[0]
 
-    return {
+    counts = {
         "hydrogen_bond": (
             len(interactions.hbonds_pdon) + len(interactions.hbonds_ldon)
         ),
@@ -95,22 +124,25 @@ def run_plip_on_structure(pdb_path: Path, ligand_id: str) -> dict[str, int]:
         "water_bridge": len(interactions.water_bridges),
         "halogen_bond": len(interactions.halogen_bonds),
     }
+    hydrophobic_residues = frozenset(
+        f"{event.reschain}:{event.restype}{event.resnr}"
+        for event in interactions.hydrophobic_contacts
+    )
+    return counts, hydrophobic_residues
 
 
 _SYSTEMATIC_DIFFERENCES: dict[str, str] = {
     "hydrogen_bond": (
-        "PSF uses estimated H-positions with 110° threshold + 90° heavy-atom proxy "
-        "fallback. PLIP uses OpenBabel for protonation and stricter angle criteria. "
-        "PSF may over-count H-bonds in structures without explicit hydrogens."
+        "PSF uses a 3.5 A donor-acceptor cutoff and inferred donor typing; "
+        "PLIP uses OpenBabel protonation and may report longer donor-acceptor distances. "
+        "Compare atom pairs and geometry before interpreting count differences."
     ),
     "hydrophobic_contact": (
-        "PSF uses residue-template atom typing (carbon/sulfur) with 4.0 A cutoff. "
-        "PLIP uses a similar distance-based approach but with more sophisticated "
-        "atom typing via OpenBabel. Agreement expected to be high."
+        "PSF counts every qualifying atom pair within 4.0 A. PLIP filters "
+        "hydrophobic events differently. Compare residue presence as well as raw counts."
     ),
     "salt_bridge": (
-        "PSF uses charged-residue atom tables with 4.0 A cutoff. "
-        "PLIP uses distance + angle criteria. Agreement expected to be moderate."
+        "PSF uses charged atom pairs within 5.5 A; PLIP uses charge-group centers."
     ),
     "pi_interaction": (
         "PSF uses a single 'pi_interaction' category based on aromatic residue atom "
@@ -178,28 +210,17 @@ def compare_interactions(pdb_path: Path, ligand_id: str) -> InteractionCompariso
 
     Returns an ``InteractionComparison`` with per-type agreement metrics.
     """
+    if not pdb_path.is_file():
+        raise FileNotFoundError(pdb_path)
     # --- PSF-Reasoner ---
-    try:
-        residues = _parse_structure_with_gemmi(pdb_path)
-    except Exception:
-        return InteractionComparison(
-            pdb_path=str(pdb_path),
-            ligand_id=ligand_id,
-            psf_counts=InteractionCounts(0, 0, 0, 0, 0),
-            plip_counts={},
-            by_type=[],
-        )
+    residues = _parse_structure_with_gemmi(pdb_path)
 
     # Locate ligand residue
     ligand_residues = [r for r in residues if r.identity.name.upper() == ligand_id.upper()]
     if not ligand_residues:
-        return InteractionComparison(
-            pdb_path=str(pdb_path),
-            ligand_id=ligand_id,
-            psf_counts=InteractionCounts(0, 0, 0, 0, 0),
-            plip_counts={},
-            by_type=[],
-        )
+        raise ValueError(f"PSF did not identify ligand {ligand_id} in {pdb_path}")
+    if len(ligand_residues) > 1:
+        raise ValueError(f"PSF identified multiple {ligand_id} ligands in {pdb_path}; select one")
 
     ligand = ligand_residues[0]
     waters = tuple(r for r in residues if r.is_water)
@@ -210,6 +231,7 @@ def compare_interactions(pdb_path: Path, ligand_id: str) -> InteractionCompariso
     total_sb = 0
     total_pi = 0
     total_wb = 0
+    psf_hydrophobic_residues: set[str] = set()
     for residue in residues:
         if residue.is_hetero or residue.is_water:
             continue
@@ -219,6 +241,10 @@ def compare_interactions(pdb_path: Path, ligand_id: str) -> InteractionCompariso
         total_sb += counts.salt_bridges
         total_pi += counts.pi_interactions
         total_wb += counts.water_bridges
+        if counts.hydrophobic_contacts:
+            psf_hydrophobic_residues.add(
+                f"{residue.identity.chain}:{residue.identity.name}{residue.identity.number}"
+            )
 
     psf_counts = InteractionCounts(
         hydrogen_bonds=total_hb,
@@ -229,33 +255,27 @@ def compare_interactions(pdb_path: Path, ligand_id: str) -> InteractionCompariso
     )
 
     # --- PLIP (requires PDB format) ---
-    plip_counts: dict[str, int] = {}
-    try:
-        # PLIP only supports PDB format.  Convert CIF/mmCIF to PDB if needed.
-        suffix = pdb_path.suffix.lower()
-        if suffix in {".cif", ".mmcif"}:
-            import tempfile as _tmp
+    # PLIP only supports PDB format. Convert CIF/mmCIF to PDB if needed.
+    suffix = pdb_path.suffix.lower()
+    if suffix in {".cif", ".mmcif"}:
+        import tempfile as _tmp
 
-            import gemmi as _gemmi
+        import gemmi as _gemmi
 
-            _structure = _gemmi.read_structure(str(pdb_path))
-            _pdb_text = _structure.make_minimal_pdb()
-            _lines = [l for l in _pdb_text.splitlines() if not l.startswith("ANISOU")]
-            if _lines and not _lines[-1].startswith("END"):
-                _lines.append("END")
-            with _tmp.NamedTemporaryFile(
-                suffix=".pdb", mode="w", delete=False
-            ) as _f:
-                _f.write("\n".join(_lines) + "\n")
-                _pdb_path = Path(_f.name)
-            try:
-                plip_counts = run_plip_on_structure(_pdb_path, ligand_id)
-            finally:
-                _pdb_path.unlink(missing_ok=True)
-        else:
-            plip_counts = run_plip_on_structure(pdb_path, ligand_id)
-    except ImportError:
-        pass
+        _structure = _gemmi.read_structure(str(pdb_path))
+        _pdb_text = _structure.make_minimal_pdb()
+        _lines = [line for line in _pdb_text.splitlines() if not line.startswith("ANISOU")]
+        if _lines and not _lines[-1].startswith("END"):
+            _lines.append("END")
+        with _tmp.NamedTemporaryFile(suffix=".pdb", mode="w", delete=False) as _f:
+            _f.write("\n".join(_lines) + "\n")
+            _pdb_path = Path(_f.name)
+        try:
+            plip_counts, plip_hydrophobic_residues = _run_plip_with_residues(_pdb_path, ligand_id)
+        finally:
+            _pdb_path.unlink(missing_ok=True)
+    else:
+        plip_counts, plip_hydrophobic_residues = _run_plip_with_residues(pdb_path, ligand_id)
 
     # --- Compare ---
     by_type = [
@@ -307,4 +327,6 @@ def compare_interactions(pdb_path: Path, ligand_id: str) -> InteractionCompariso
         psf_counts=psf_counts,
         plip_counts=plip_counts,
         by_type=by_type,
+        psf_hydrophobic_residues=frozenset(psf_hydrophobic_residues),
+        plip_hydrophobic_residues=plip_hydrophobic_residues,
     )
