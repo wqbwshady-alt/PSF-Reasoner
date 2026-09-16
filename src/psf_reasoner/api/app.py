@@ -8,10 +8,12 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
+from psf_reasoner.api.exports import report_to_csv, report_to_json, report_to_pymol
 from psf_reasoner.application.ports import ReportLookupError, StructureInputError
 from psf_reasoner.application.runner import AnalysisRunnerProtocol
 from psf_reasoner.bootstrap import create_default_runner
 from psf_reasoner.infrastructure.uploads import maintain_uploads, resolve_upload
+from psf_reasoner.physical.identity import extract_protein_identity
 from psf_reasoner.schemas.inputs import (
     AnalysisRequest,
     LigandSpec,
@@ -23,8 +25,13 @@ from psf_reasoner.schemas.report import PSFReport
 
 STATIC_DIR = Path(__file__).parent / "static"
 UPLOAD_DIR = Path.cwd() / ".psf_uploads"
+EXAMPLES_DIR = Path(__file__).parents[3] / "examples" / "data"
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 SUPPORTED_STRUCTURE_SUFFIXES = frozenset({".cif", ".mmcif", ".pdb"})
+
+# Combined V3 analysis payloads, keyed by report_id.  Same lifecycle as the
+# in-memory report repository (process-local workbench storage).
+_V3_RESULTS: dict[str, dict] = {}
 
 
 def _resolve_structure_input(si: StructureInput, upload_dir: Path) -> StructureInput:
@@ -120,34 +127,33 @@ def create_app(
 
     @api.get("/v3/status")
     def v3_status() -> dict:
-        """V3 research dashboard — dataset, model, and audit status."""
-        from psf_reasoner.datasets.expansion import audit_expansion
-        from psf_reasoner.calibration.identity_audit import run_identity_audit
+        """V3 dataset status — case inventory and review state.
 
-        exp = audit_expansion()
-        identity = run_identity_audit()
+        Calibration-model audit numbers are NOT re-trained per request here;
+        see pilot_validity_audit/ for the offline snapshot and its caveats.
+        """
+        from psf_reasoner.datasets.golden_cases import load_golden_cases
+        from psf_reasoner.datasets.quality_control import run_dataset_qc
 
+        cases = load_golden_cases()
+        qc = run_dataset_qc(cases)
         return {
             "dataset": {
-                "total_cases": exp.total,
-                "target": exp.target,
-                "families": exp.total_families,
-                "families_can_evaluate_within": exp.can_evaluate_within_family,
-                "structure_coverage": round(exp.structure_coverage, 2),
-                "contact_coverage": round(exp.contact_coverage, 2),
-                "family_label_matrix": {k: dict(v) for k, v in exp.family_label_matrix.items()},
+                "total_cases": qc.total_samples,
+                "accepted": qc.accepted,
+                "pending": qc.pending,
+                "rejected": qc.rejected,
+                "needs_clarification": qc.needs_clarification,
+                "structure_pairs": qc.has_structure_pair,
+                "with_ddg": qc.has_ddg,
+                "protein_systems": qc.protein_systems,
+                "sample_issues": qc.sample_issues[:20],
             },
-            "identity_audit": {
-                "baselines": identity["identity_baselines"],
-                "within_family_evaluable": sum(
-                    1 for v in identity["within_family"].values() if v.get("can_evaluate")
-                ),
-                "within_family_total": len(identity["within_family"]),
-                "cross_family_mean_mcc": round(
-                    sum(v.get("mcc", 0) for v in identity["cross_family"].values())
-                    / max(len(identity["cross_family"]), 1), 3
-                ),
-            },
+            "calibration_note": (
+                "calibration models are NOT trained per request.  Offline audit "
+                "snapshot lives in pilot_validity_audit/; all report confidence "
+                "values remain heuristic (uncalibrated)."
+            ),
         }
 
     @api.get("/", include_in_schema=False)
@@ -244,13 +250,20 @@ def create_app(
             except (FileNotFoundError, ValueError) as exc:
                 raise HTTPException(status_code=404, detail=str(exc)) from exc
         elif path:
-            # Legacy fallback — only serve files inside the upload directory.
+            # Only serve files inside the upload directory or the bundled
+            # examples/data directory (the local workbench demo fixtures).
             file_path = Path(path).resolve()
             upload_root = _upload_dir.resolve()
-            if not (str(file_path).startswith(str(upload_root) + "/") or file_path == upload_root):
+            examples_root = EXAMPLES_DIR.resolve()
+            allowed = (
+                str(file_path).startswith(str(upload_root) + "/")
+                or file_path == upload_root
+                or str(file_path).startswith(str(examples_root) + "/")
+            )
+            if not allowed:
                 raise HTTPException(
                     status_code=403,
-                    detail="only uploaded structure files can be served",
+                    detail="only uploaded or bundled example structure files can be served",
                 )
             if not file_path.is_file():
                 raise HTTPException(status_code=404, detail="structure file not found")
@@ -273,48 +286,71 @@ def create_app(
 
     @api.post("/v3/analyze", response_model=dict)
     def v3_analyze(request: AnalysisRequest) -> dict:
-        """V3 analysis — returns structural context + causal graph + V2 report."""
-        if request.mutation is None or request.mutant_structure is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="v3/analyze requires both mutation and mutant_structure",
-            )
-        resolved = _resolve_request(request, _upload_dir)
-        # V2 report as baseline
-        v2_report = _run(active_runner, resolved)
+        """V3 analysis — V2 report + structural context + causal graph + literature."""
+        return _build_v3_payload(active_runner, request, _upload_dir)
 
-        # V3 structural context + causal graph
-        from psf_reasoner.context.structural_context_builder import StructuralContextBuilder
-        from psf_reasoner.reasoning.mechanism_generator import MechanismGenerator
-        from psf_reasoner.knowledge.literature_evidence import get_evidence_summary
-        import dataclasses
-
-        ctx_builder = StructuralContextBuilder()
-        ctx = ctx_builder.build(resolved, qc_report=v2_report.structure_qc)
-
-        gen = MechanismGenerator()
-        graph = gen.generate(ctx)
-
-        lit_summary = get_evidence_summary(
-            "HIV-1_PROTEASE" if "MK1" in resolved.ligand.identifier.upper()
-            else "DHFR" if "MTX" in resolved.ligand.identifier.upper()
-            else "",
-            resolved.mutation.notation,
+    @api.post("/v3/analyze-upload", response_model=dict)
+    async def v3_analyze_upload(
+        reference_file: Annotated[UploadFile, File(description="WT/reference PDB or mmCIF")],
+        ligand: Annotated[str, Form()],
+        mutation: Annotated[str, Form()],
+        mutant_file: Annotated[UploadFile | None, File()] = None,
+        chain: Annotated[str | None, Form()] = None,
+        phenotype: Annotated[str | None, Form()] = None,
+    ) -> dict:
+        """V3 analysis from multipart uploads — the main workbench entry point."""
+        reference_path = await _store_upload(reference_file, _upload_dir)
+        mutant_path = (
+            await _store_upload(mutant_file, _upload_dir)
+            if mutant_file is not None and mutant_file.filename
+            else None
         )
+        request = AnalysisRequest(
+            structure=StructureInput(path=str(reference_path), upload_id=reference_path.name),
+            mutant_structure=StructureInput(path=str(mutant_path), upload_id=mutant_path.name)
+            if mutant_path
+            else None,
+            ligand=LigandSpec(identifier=ligand),
+            mutation=MutationSpec(notation=mutation, chain=chain or None),
+            phenotype=PhenotypeSpec(name=phenotype) if phenotype else None,
+        )
+        return _build_v3_payload(active_runner, request, _upload_dir)
 
-        return {
-            "v2_report": v2_report.model_dump(),
-            "v3_context": {
-                "mutation_site": ctx.mutation_site,
-                "structural_differences": ctx.structural_differences,
-                "ligand_decomposition": ctx.ligand_decomposition,
-                "neighborhood_4a": ctx.neighborhood_4a,
-                "neighborhood_6a": ctx.neighborhood_6a,
-                "qc_grade": ctx.qc_grade,
-            },
-            "v3_causal_graph": graph.to_dict(),
-            "v3_literature": lit_summary,
-        }
+    @api.get("/export/{report_id}")
+    def export_report(report_id: str, format: str = "json") -> PlainTextResponse:
+        """Export a completed V3 analysis as JSON, CSV, or a PyMOL script."""
+        payload = _V3_RESULTS.get(report_id)
+        if payload is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=(
+                    "no exportable V3 analysis found for this report_id. "
+                    "Run a V3 analysis first; exports live for the current "
+                    "server session."
+                ),
+            )
+        if format == "json":
+            content = report_to_json(payload)
+            media_type = "application/json"
+            filename = f"psf_report_{report_id}.json"
+        elif format == "csv":
+            content = report_to_csv(payload)
+            media_type = "text/csv"
+            filename = f"psf_report_{report_id}.csv"
+        elif format == "pymol":
+            content = report_to_pymol(payload)
+            media_type = "text/plain"
+            filename = f"psf_session_{report_id}.pml"
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="format must be one of: json, csv, pymol",
+            )
+        return PlainTextResponse(
+            content,
+            media_type=media_type,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
 
     @api.post("/admin/maintain-uploads")
     def maintain_uploads_endpoint() -> dict:
@@ -337,6 +373,93 @@ def _run(runner: AnalysisRunnerProtocol, request: AnalysisRequest) -> PSFReport:
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=str(error),
         ) from error
+
+
+def _build_v3_payload(
+    runner: AnalysisRunnerProtocol,
+    request: AnalysisRequest,
+    upload_dir: Path,
+) -> dict:
+    """Run the full V3 analysis and store the combined payload for export.
+
+    Protein identity comes from the structure header, not from the ligand
+    abbreviation.  When the identity cannot be determined, literature
+    evidence stays empty rather than falling back to another protein.
+    """
+    from psf_reasoner.context.structural_context_builder import (
+        StructuralContextBuilder,
+    )
+    from psf_reasoner.knowledge.literature_evidence import get_evidence_summary
+    from psf_reasoner.reasoning.mechanism_generator import MechanismGenerator
+
+    if request.mutation is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="v3/analyze requires a mutation (notation like V82A)",
+        )
+    resolved = _resolve_request(request, upload_dir)
+    v2_report = _run(runner, resolved)
+
+    identity = extract_protein_identity(resolved.structure.path)
+    family = identity.family_hint
+
+    if resolved.mutant_structure is not None:
+        ctx = StructuralContextBuilder().build(
+            resolved,
+            qc_report=v2_report.structure_qc,
+            protein_family_hint=family,
+        )
+        graph = MechanismGenerator().generate(ctx, protein_family=family)
+    else:
+        # No mutant structure: no structural context / causal graph can be
+        # honestly computed.  Say so instead of fabricating changes.
+        ctx = None
+        graph = None
+
+    lit_summary = (
+        get_evidence_summary(family, resolved.mutation.notation)
+        if family
+        else {
+            "protein_family": "",
+            "total_entries": 0,
+            "by_grade": {},
+            "has_direct_evidence": False,
+            "has_quantitative_evidence": False,
+        }
+    )
+
+    mutation_site = ctx.mutation_site if ctx else {}
+    payload: dict = {
+        "report_id": v2_report.report_id,
+        "v2_report": v2_report.model_dump(),
+        "protein_identity": identity.to_dict(),
+        "v3_context": (
+            {
+                "mutation_site": mutation_site,
+                "structural_differences": ctx.structural_differences,
+                "ligand_decomposition": ctx.ligand_decomposition,
+                "neighborhood_4a": ctx.neighborhood_4a,
+                "neighborhood_6a": ctx.neighborhood_6a,
+                "qc_grade": ctx.qc_grade,
+            }
+            if ctx
+            else {
+                "note": "mutant structure not supplied — structural comparison "
+                "was not computed and no structural changes are claimed."
+            }
+        ),
+        "v3_causal_graph": graph.to_dict() if graph else None,
+        "v3_literature": lit_summary,
+        "evidence_localization": {
+            "mutation_chain": resolved.mutation.chain or "",
+            "mutation_residue_number": resolved.mutation.residue_number,
+            "mutation_label": mutation_site.get("residue_label", ""),
+            "ligand": resolved.ligand.identifier,
+            "neighborhood_4a": [n.get("label", "") for n in ctx.neighborhood_4a] if ctx else [],
+        },
+    }
+    _V3_RESULTS[v2_report.report_id] = payload
+    return payload
 
 
 async def _store_upload(upload: UploadFile, upload_dir: Path) -> Path:

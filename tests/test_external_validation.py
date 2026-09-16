@@ -1,9 +1,11 @@
+from pathlib import Path
+
 import pytest
 
 from psf_reasoner.evaluation.external_validation import (
+    _SYSTEMATIC_DIFFERENCES,
     InteractionComparison,
     PerTypeAgreement,
-    _SYSTEMATIC_DIFFERENCES,
     compare_interactions,
 )
 from psf_reasoner.physical.interactions import InteractionCounts
@@ -12,6 +14,7 @@ from psf_reasoner.physical.interactions import InteractionCounts
 def _plip_available() -> bool:
     try:
         import plip  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -55,54 +58,61 @@ class TestInteractionComparison:
         )
         assert comp.total_agreement_rate == 0.0
 
+    def test_hydrophobic_residue_overlap_has_separate_metrics(self) -> None:
+        comp = InteractionComparison(
+            pdb_path="example.pdb",
+            ligand_id="MK1",
+            psf_counts=InteractionCounts(0, 4, 0, 0, 0),
+            psf_hydrophobic_residues=frozenset({"A:VAL82", "A:ILE84"}),
+            plip_hydrophobic_residues=frozenset({"A:VAL82"}),
+        )
+        assert comp.hydrophobic_residue_precision == 0.5
+        assert comp.hydrophobic_residue_recall == 1.0
+
 
 class TestSystematicDifferences:
     def test_all_interaction_types_have_notes(self) -> None:
         expected_types = {
-            "hydrogen_bond", "hydrophobic_contact", "salt_bridge",
-            "pi_interaction", "water_bridge",
+            "hydrogen_bond",
+            "hydrophobic_contact",
+            "salt_bridge",
+            "pi_interaction",
+            "water_bridge",
         }
         assert expected_types <= set(_SYSTEMATIC_DIFFERENCES)
 
 
 class TestCompareInteractions:
-    def test_graceful_with_nonexistent_file(self, tmp_path) -> None:
-        """Should handle missing files gracefully."""
-        result = compare_interactions(tmp_path / "nonexistent.pdb", "MK1")
-        assert result.ligand_id == "MK1"
-        assert result.psf_counts.hydrogen_bonds == 0
+    def test_missing_plip_is_not_reported_as_zero_agreement(self, monkeypatch) -> None:
+        from psf_reasoner.evaluation import external_validation as module
 
-    def test_graceful_with_missing_ligand(self, tmp_path) -> None:
-        """Should handle structures where the ligand is not found."""
+        def missing_plip(*_args):
+            raise ImportError("PLIP unavailable")
+
+        monkeypatch.setattr(module, "_run_plip_with_residues", missing_plip)
+        with pytest.raises(ImportError, match="PLIP unavailable"):
+            compare_interactions(Path("examples/data/1sdt.cif"), "MK1")
+
+    def test_nonexistent_file_fails_validation(self, tmp_path) -> None:
+        with pytest.raises(FileNotFoundError):
+            compare_interactions(tmp_path / "nonexistent.pdb", "MK1")
+
+    def test_missing_ligand_fails_validation(self, tmp_path) -> None:
         pdb = tmp_path / "minimal.pdb"
         pdb.write_text(
             "ATOM      1  N   ALA A   1       0.0   0.0   0.0  1.00  0.00           N\n"
             "ATOM      2  CA  ALA A   1       1.5   0.0   0.0  1.00  0.00           C\n"
             "END\n"
         )
-        result = compare_interactions(pdb, "MK1")
-        assert result.ligand_id == "MK1"
-        assert result.psf_counts.hydrogen_bonds == 0
+        with pytest.raises(ValueError, match="PSF did not identify ligand MK1"):
+            compare_interactions(pdb, "MK1")
 
     @plip_skip
-    def test_runs_with_plip_when_available(self, tmp_path) -> None:
-        """Integration test — requires PLIP to be installed."""
-        pdb = tmp_path / "test.pdb"
-        pdb.write_text(
-            "HEADER    TEST\n"
-            "ATOM      1  N   LYS A  82       0.0   0.0   0.0  1.00  0.00           N\n"
-            "ATOM      2  CA  LYS A  82       1.5   0.0   0.0  1.00  0.00           C\n"
-            "ATOM      3  CB  LYS A  82       2.0   0.5   0.0  1.00  0.00           C\n"
-            "ATOM      4  CG  LYS A  82       3.0   1.0   0.0  1.00  0.00           C\n"
-            "ATOM      5  CD  LYS A  82       4.0   1.5   0.0  1.00  0.00           C\n"
-            "ATOM      6  CE  LYS A  82       5.0   2.0   0.0  1.00  0.00           C\n"
-            "ATOM      7  NZ  LYS A  82       6.0   2.5   0.0  1.00  0.00           N\n"
-            "HETATM    8  O1  MK1 B901       8.5   2.5   0.0  1.00  0.00           O\n"
-            "END\n"
-        )
-        result = compare_interactions(pdb, "MK1")
-        # Should produce a valid comparison object
-        assert result.ligand_id == "MK1"
-        assert result.psf_counts is not None
-        # PLIP may or may not detect interactions on this minimal structure
-        assert isinstance(result.total_agreement_rate, float)
+    def test_runs_with_plip_on_real_complex(self) -> None:
+        """The reference tool must detect the ligand and real interactions."""
+        result = compare_interactions(Path("examples/data/1sdt.cif"), "MK1")
+        assert result.plip_counts["hydrogen_bond"] > 0
+        assert result.plip_counts["hydrophobic_contact"] > 0
+        assert "A:VAL82" in result.psf_hydrophobic_residues
+        assert "A:VAL82" in result.plip_hydrophobic_residues
+        assert result.hydrophobic_residue_recall is not None

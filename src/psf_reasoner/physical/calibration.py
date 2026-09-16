@@ -22,7 +22,8 @@ class HIVProteaseCalibrationProvider:
                 title="HIV-1 protease V82A indinavir-site calibration label",
                 description=(
                     "Curated benchmark label: the V82A HIV-1 protease mutant is treated as an "
-                    "inhibitor-binding-site resistance case for MK1/indinavir-like pocket analysis."
+                    "inhibitor-binding-site resistance case for MK1/indinavir-like pocket analysis. "
+                    "Literature: 3.3-fold Ki increase (Mahalingam et al. 2004, abstract)."
                 ),
                 evidence_type=EvidenceType.EXPERIMENTAL_CALIBRATION,
                 status=EvidenceStatus.OBSERVED,
@@ -44,7 +45,7 @@ class HIVProteaseCalibrationProvider:
                     Provenance(
                         kind=ProvenanceKind.STRUCTURE,
                         source="RCSB PDB 1SDT and 1SDV",
-                        method="paired MK1-bound HIV protease V82A/L90M crystallographic benchmark",
+                        method="paired MK1-bound HIV protease WT/V82A crystallographic benchmark",
                         parameters={"1SDT_resolution_angstrom": 1.3, "1SDV_resolution_angstrom": 1.4},
                     ),
                 ),

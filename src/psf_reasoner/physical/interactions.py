@@ -129,7 +129,7 @@ def analyze_typed_interactions(
 ) -> InteractionAnalysis:
     protein_atoms = _heavy_atoms(residue)
     ligand_atoms = _heavy_atoms(ligand)
-    ligand_graph = _ligand_bond_graph(ligand_atoms)
+    ligand_graph = _ligand_bond_graph(ligand.atoms)
     interactions: list[Interaction] = []
     for protein_atom in protein_atoms:
         protein_type = _type_protein_atom(protein_atom)
@@ -216,6 +216,7 @@ def _type_ligand_atom(
     bond_graph: dict[str, tuple[AtomRecord, ...]] | None = None,
 ) -> AtomTyping:
     neighbors = bond_graph.get(atom.label, ()) if bond_graph is not None else ()
+    heavy_neighbors = tuple(neighbor for neighbor in neighbors if neighbor.element not in {"D", "H"})
     is_oxygen = atom.element == "O"
     is_sulfur = atom.element == "S"
     is_carbon = atom.element == "C"
@@ -242,18 +243,17 @@ def _type_ligand_atom(
     # Oxygen/sulfur are conservative: only donors with explicit H or
     # formal charge (carbonyl/ether are almost never donors).
     n_donor = is_nitrogen and (
-        bonded_hydrogen or atom.formal_charge > 0 or (bool(neighbors) and len(neighbors) < 3)
+        bonded_hydrogen or atom.formal_charge > 0 or (bool(heavy_neighbors) and len(heavy_neighbors) < 3)
     )
     os_donor = (is_oxygen or is_sulfur) and (bonded_hydrogen or atom.formal_charge > 0)
     likely_donor = n_donor or os_donor
     # Carbons bonded to O/N are polar, not hydrophobic (aligned with PLIP)
     ligand_hydrophobic = (
-        is_carbon
-        and not any(neighbor.element in {"O", "N"} for neighbor in neighbors)
+        is_carbon and not any(neighbor.element in {"O", "N"} for neighbor in neighbors)
     ) or atom.element in {"CL", "BR", "I", "F"}
     # Nitrogen with <3 heavy neighbours is protonatable → potential positive
     # (aligned with PLIP's OpenBabel-based charge assignment at phys. pH)
-    n_protonatable = is_nitrogen and bool(neighbors) and len(neighbors) < 3
+    n_protonatable = is_nitrogen and bool(heavy_neighbors) and len(heavy_neighbors) < 3
     return AtomTyping(
         donor=likely_donor,
         acceptor=is_oxygen or is_sulfur,
@@ -282,7 +282,7 @@ def _type_ligand_atom(
 
 def describe_ligand_atom_types(ligand: ResidueRecord) -> tuple[str, ...]:
     ligand_atoms = _heavy_atoms(ligand)
-    graph = _ligand_bond_graph(ligand_atoms)
+    graph = _ligand_bond_graph(ligand.atoms)
     return tuple(
         (
             f"{atom.label}: donor={typing.donor}, acceptor={typing.acceptor}, "
@@ -570,8 +570,6 @@ def cutoff_sensitivity_analysis(
     ``(cutoff_values, count_per_cutoff)`` suitable for constructing
     ``CutoffSensitivityReport``.
     """
-    import copy
-
     global HYDROGEN_BOND_CUTOFF_ANGSTROM, HYDROPHOBIC_CUTOFF_ANGSTROM
     global SALT_BRIDGE_CUTOFF_ANGSTROM, PI_CENTROID_CUTOFF_ANGSTROM
 
@@ -590,9 +588,7 @@ def cutoff_sensitivity_analysis(
             HYDROGEN_BOND_CUTOFF_ANGSTROM = cutoff
             # Re-run analysis for this residue-ligand pair
             result = analyze_typed_interactions(residue, ligand, waters)
-            hbond_counts.append(
-                sum(item.interaction_type == "hydrogen_bond" for item in result.interactions)
-            )
+            hbond_counts.append(sum(item.interaction_type == "hydrogen_bond" for item in result.interactions))
 
         for cutoff in hydrophobic_cutoffs:
             HYDROPHOBIC_CUTOFF_ANGSTROM = cutoff
@@ -604,16 +600,12 @@ def cutoff_sensitivity_analysis(
         for cutoff in salt_bridge_cutoffs:
             SALT_BRIDGE_CUTOFF_ANGSTROM = cutoff
             result = analyze_typed_interactions(residue, ligand, waters)
-            salt_counts.append(
-                sum(item.interaction_type == "salt_bridge" for item in result.interactions)
-            )
+            salt_counts.append(sum(item.interaction_type == "salt_bridge" for item in result.interactions))
 
         for cutoff in pi_cutoffs:
             PI_CENTROID_CUTOFF_ANGSTROM = cutoff
             result = analyze_typed_interactions(residue, ligand, waters)
-            pi_counts.append(
-                sum(item.interaction_type == "pi_interaction" for item in result.interactions)
-            )
+            pi_counts.append(sum(item.interaction_type == "pi_interaction" for item in result.interactions))
     finally:
         HYDROGEN_BOND_CUTOFF_ANGSTROM = original_hbond
         HYDROPHOBIC_CUTOFF_ANGSTROM = original_hydrophobic

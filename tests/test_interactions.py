@@ -1,4 +1,9 @@
-from psf_reasoner.physical.interactions import analyze_typed_interactions, count_typed_interactions
+from psf_reasoner.physical.interactions import (
+    _ligand_bond_graph,
+    _type_ligand_atom,
+    analyze_typed_interactions,
+    count_typed_interactions,
+)
 from psf_reasoner.physical.structure import AtomRecord, ResidueIdentity, ResidueRecord
 
 
@@ -71,6 +76,24 @@ def test_hydrophobic_contact_between_carbon_atoms() -> None:
     counts = count_typed_interactions(valine, ligand, ())
 
     assert counts.hydrophobic_contacts == 1
+
+
+def test_ligand_hydroxyl_requires_explicit_hydrogen_to_be_a_donor() -> None:
+    ligand = _residue(
+        ResidueIdentity(chain="B", name="LIG", number=901, insertion_code=None),
+        ("C1", "C", 0.0, 0.0, 0.0, 0),
+        ("OH", "O", 1.43, 0.0, 0.0, 0),
+        ("H1", "H", 2.39, 0.0, 0.0, 0),
+        ("C2", "C", 5.0, 0.0, 0.0, 0),
+        ("OX", "O", 6.24, 0.0, 0.0, 0),
+        is_hetero=True,
+    )
+    graph = _ligand_bond_graph(ligand.atoms)
+    hydroxyl, carbonyl = ligand.atoms[1], ligand.atoms[4]
+    assert _type_ligand_atom(hydroxyl, graph).donor
+    without_h = _ligand_bond_graph(tuple(atom for atom in ligand.atoms if atom.element != "H"))
+    assert not _type_ligand_atom(hydroxyl, without_h).donor
+    assert not _type_ligand_atom(carbonyl, graph).donor
 
 
 def test_water_bridge_mediated_interaction() -> None:

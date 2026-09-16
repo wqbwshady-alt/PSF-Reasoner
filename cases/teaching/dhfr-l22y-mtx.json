@@ -1,0 +1,116 @@
+{
+  "case_id": "dhfr-l22y-mtx",
+  "title": "人 DHFR L22Y 对甲氨蝶呤（MTX）的结合影响：蝶啶口袋的空间位阻",
+  "protein": {
+    "name": "Human Dihydrofolate Reductase",
+    "species": "Homo sapiens",
+    "uniprot_accession": "P00374",
+    "pdb_id_wt": "1U72",
+    "pdb_id_mutant": "1DLS"
+  },
+  "mutation": {
+    "notation": "L22Y",
+    "wt_residue": "L",
+    "mutant_residue": "Y",
+    "chain": "A",
+    "uniprot_position": 22,
+    "pdb_position": 22,
+    "mapping_note": "1DLS SEQADV 明确记录 TYR A 22（UniProt P00374 LEU 22）。"
+  },
+  "structures": {
+    "wild_type": {
+      "pdb_id": "1U72", "file": "examples/data/1U72.pdb",
+      "method": "X-ray", "resolution_a": 1.9,
+      "ligands": [{"id": "MTX", "role": "inhibitor"}, {"id": "NDP", "role": "cofactor"}],
+      "background_mutations": [],
+      "quality_notes": "野生型 DHFR + MTX + NADPH。"
+    },
+    "mutant": {
+      "pdb_id": "1DLS", "file": "examples/data/1DLS.pdb",
+      "method": "X-ray", "resolution_a": 2.3,
+      "ligands": [{"id": "MTX", "role": "inhibitor"}, {"id": "NDP", "role": "cofactor"}],
+      "background_mutations": ["L22Y"],
+      "quality_notes": "L22Y 突变体 + MTX，来自 Lewis 1995（PMID 7890613）。"
+    },
+    "pair_comparability": {
+      "grade": "comparable",
+      "notes": "同配体（MTX+NDP），分辨率 1.9/2.3 Å。"
+    }
+  },
+  "functional_measurement": {
+    "assay_type": "Ki",
+    "wt_value": null, "mutant_value": null,
+    "value_unit": "",
+    "conditions": "",
+    "fold_change": null,
+    "direction": "affinity_decrease",
+    "phenotype": "drug_resistance"
+  },
+  "provenance": {
+    "pmid": "7890613",
+    "doi": "",
+    "source_location": "Lewis et al. 1995, J Biol Chem 270(10):5057-64（1DLR/1DLS 原始文献）",
+    "quote_or_note": "L22Y 显著降低 MTX 结合的方向有文献支持；具体倍数待全文复核（同类突变 L22F 为 88 倍，PMID 8643082）。"
+  },
+  "mechanism": {
+    "conclusion": "Leu22 位于蝶啶环结合口袋边缘。L→Y 引入大体积酚羟基侧链，与 MTX 蝶啶环产生空间冲突并扰乱口袋构象，导致 MTX 结合显著减弱。",
+    "supporting_evidence": [
+      "结构：1U72 中 L22 紧邻 MTX 蝶啶环（平台可计算最近距离）",
+      "结构：1DLS 中 Y22 侧链指向蝶啶口袋（结构直接观测）",
+      "文献：L22Y 降低 MTX 结合（PMID 7890613；同类 L22F 88 倍见 PMID 8643082）"
+    ],
+    "conflicting_evidence": [],
+    "missing_evidence": [
+      "L22Y 的精确 Ki 倍数待全文复核",
+      "两种结构之间蝶啶环位置的定量位移未在平台内自动对比"
+    ]
+  },
+  "review": {
+    "status": "pending_verification",
+    "reviewed_by": "2026-09-10 证据审计（docs/EVIDENCE-REVIEW.md）",
+    "review_date": "2026-09-10",
+    "notes": "结构配对与方向已核实；数值待全文复核。教学可用，定量评估不可用。"
+  },
+  "usage": {
+    "demo_ready": true,
+    "teaching_ready": true,
+    "quantitative_eval_ready": false
+  },
+  "teaching": {
+    "background": "DHFR 催化二氢叶酸还原，是抗癌药甲氨蝶呤（MTX）的经典靶点。MTX 的蝶啶环插入酶活性口袋。Leu22 是蝶啶口袋第一壳层残基。与 V82A（侧链变小）相反，L22Y 是“变大”突变：亮氨酸换成更大的酪氨酸。",
+    "learning_objectives": [
+      "对比“侧链变小”（V82A）与“侧链变大+引入极性/芳香性”（L22Y）两类机制",
+      "理解空间位阻与化学性质变化可以同时发生",
+      "学会在数值缺失时用方向性证据+结构证据支撑结论"
+    ],
+    "observation_tasks": [
+      "运行 L22Y 分析（WT=1U72.pdb，mutant=1DLS.pdb，ligand=MTX，mutation=L22Y，chain=A）",
+      "比较 3D 视图中 Leu22 与 Tyr22 侧链的朝向差异",
+      "找出 Structural Context 中体积、极性、芳香性三项变化"
+    ],
+    "thinking_questions": [
+      "酪氨酸引入的酚羟基，是帮助还是阻碍 MTX 结合？",
+      "为什么本案例的精确倍数被标为“待复核”，而 V82A 的 3.3 倍可以直接引用？",
+      "如果让你设计一个实验确认机制，你会测什么？"
+    ],
+    "stepwise_explanation": [
+      {"step": "物理参数层：体积 167→194 Å³（增大）、引入极性酚羟基与芳香环", "evidence_status": "computed", "note": "通用侧链性质"},
+      {"step": "结构机制层：蝶啶口袋空间冲突 + 口袋构象扰动", "evidence_status": "computed", "note": "结构对可直接观察 Y22 侧链方向；口袋构象扰动为推断"},
+      {"step": "功能影响层：MTX 结合显著减弱（方向性）", "evidence_status": "fact", "note": "PMID 7890613 体系；精确倍数待复核"}
+    ],
+    "facts": [
+      "1DLS 确为 L22Y 突变体（SEQADV 记录），配体为 MTX",
+      "Leu22 位于蝶啶口袋第一壳层",
+      "L22F（同类突变）对 MTX Ki 升高 88 倍（PMID 8643082 摘要）"
+    ],
+    "computed_inferences": [
+      "平台可计算 WT 中 L22 与 MTX 的最近距离",
+      "体积/极性/芳香性三项化学属性变化由平台标注"
+    ],
+    "hypotheses": [
+      "酚羟基与蝶啶环的具体空间冲突模式（需逐原子检查）",
+      "口袋构象扰动幅度（需 RMSD/口袋体积定量）"
+    ],
+    "run_instructions": "网页工作台：WT=examples/data/1U72.pdb，突变体=examples/data/1DLS.pdb，配体 MTX，突变 L22Y，链 A。注意：1DLS.pdb 中的 MTX 位于指定链，若配体定位报歧义请补充配体链信息。"
+  }
+}

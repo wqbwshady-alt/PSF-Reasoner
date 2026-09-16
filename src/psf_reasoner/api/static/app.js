@@ -1,4 +1,4 @@
-/* PSF-Reasoner v4 Client */
+/* PSF-Reasoner v5 Client — honest, wired end-to-end workbench */
 
 const examplePayload = {
   structure: { path: "examples/data/1sdt.cif", format: "mmcif", model_index: 0 },
@@ -14,11 +14,15 @@ const reverseExamplePayload = {
 };
 
 let analysisMode = "bidirectional";
-let viewer = null, referenceData = null, mutantData = null, viewerMode = "reference";
 let loadingTimer = null;
+let lastPayload = null; // last combined V3 payload (for localization + export)
 
 const $ = s => document.querySelector(s);
 const $$ = s => document.querySelectorAll(s);
+
+// Chinese translation layer (i18n.js); falls back to the original text.
+const zh = (window.PSF_I18N && window.PSF_I18N.zh) || (s => s);
+const zhPath = (window.PSF_I18N && window.PSF_I18N.zhPath) || (s => s);
 
 const els = {
   form: $("#analysis-form"),
@@ -36,35 +40,76 @@ const els = {
 // ---------------------------------------------------------------------------
 // 3D Viewer
 // ---------------------------------------------------------------------------
+let viewer = null;
+let viewerMode = "reference";
+let structureData = { reference: null, mutant: null }; // { pdbText, path, uploadId }
+let highlightState = { chain: "", resi: "", ligand: "", neighbors: [] };
+
 function initViewer() {
   if (viewer) return;
   try { viewer = $3Dmol.createViewer("viewer-3d", { backgroundColor: "white", antialias: true }); }
   catch (e) { showError("3D 查看器初始化失败: " + e.message); }
 }
+
 async function loadPDB(path, uploadId) {
   const p = new URLSearchParams();
   if (uploadId) p.set("upload_id", uploadId); else p.set("path", path);
   const r = await fetch(`/structure?${p.toString()}`);
-  if (!r.ok) throw new Error(`无法加载: ${path}`);
+  if (!r.ok) throw new Error(`无法加载结构: ${path || uploadId}`);
   return r.text();
 }
-async function showStructure(path, chain, resNum, ligandId, uploadId) {
-  els.viewerPanel.classList.remove("hidden"); initViewer(); if (!viewer) return;
+
+function parseNeighborLabels(labels) {
+  // "A:VAL82" -> {chain:"A", resi:"82"}; ignore entries without a residue number
+  const out = [];
+  for (const label of labels || []) {
+    const m = String(label).match(/^([A-Za-z0-9]):[A-Z]{1,3}(\d+)/);
+    if (m) out.push({ chain: m[1], resi: m[2] });
+  }
+  return out;
+}
+
+function applyHighlights() {
+  if (!viewer) return;
+  const chain = highlightState.chain || undefined;
+  viewer.setStyle({}, { cartoon: { color: "spectrum" } });
+  if (highlightState.resi) {
+    viewer.setStyle({ chain, resi: highlightState.resi },
+      { cartoon: { color: "#ff6b6b" }, stick: { radius: 0.35, color: "#ff6b6b" } });
+  }
+  if (highlightState.ligand) {
+    viewer.setStyle({ resn: highlightState.ligand.toUpperCase() },
+      { stick: { radius: 0.25, color: "#0891b2" } });
+  }
+  for (const nb of highlightState.neighbors) {
+    viewer.setStyle({ chain: nb.chain, resi: nb.resi },
+      { cartoon: { color: "#f59e0b" }, stick: { radius: 0.3, color: "#f59e0b" } });
+  }
+  viewer.render();
+}
+
+async function showStructurePanel() {
+  els.viewerPanel.classList.remove("hidden");
+  initViewer();
+  if (!viewer) return;
   try {
-    viewer.removeAllSurfaces(); viewer.removeAllModels();
-    const pdb = await loadPDB(path, uploadId);
-    if (viewerMode === "reference") referenceData = pdb; else mutantData = pdb;
-    viewer.addModel(pdb, "pdb");
-    viewer.setStyle({ chain: chain || undefined }, { cartoon: { color: "spectrum" } });
-    if (resNum) viewer.setStyle({ chain: chain || undefined, resi: resNum }, { cartoon: { color: "#ff6b6b" }, stick: { radius: 0.35, color: "#ff6b6b" } });
-    if (ligandId) viewer.setStyle({ resn: ligandId.toUpperCase() }, { stick: { radius: 0.25, color: "#0891b2" } });
-    viewer.zoomTo(); viewer.render(); viewer.resize();
+    const entry = structureData[viewerMode];
+    if (!entry) throw new Error(viewerMode === "mutant" ? "未提供突变体结构" : "未提供参考结构");
+    if (!entry.pdbText) entry.pdbText = await loadPDB(entry.path, entry.uploadId);
+    viewer.removeAllSurfaces();
+    viewer.removeAllModels();
+    viewer.addModel(entry.pdbText, "pdb");
+    applyHighlights();
+    viewer.zoomTo();
+    viewer.resize();
   } catch (e) { showError("3D 渲染失败: " + e.message); }
 }
+
 els.viewerClose.addEventListener("click", () => els.viewerPanel.classList.add("hidden"));
 $$(".viewer-tab").forEach(t => t.addEventListener("click", () => {
   viewerMode = t.dataset.mode;
   $$(".viewer-tab").forEach(x => x.classList.toggle("active", x === t));
+  showStructurePanel();
 }));
 
 // ---------------------------------------------------------------------------
@@ -74,7 +119,7 @@ const stages = [
   { stage: 'parse', status: '📖 解析蛋白结构...', pct: 10 },
   { stage: 'qc', status: '🔬 结构质量评估中...', pct: 25 },
   { stage: 'physical', status: '⚛️ 计算物理证据 (SASA·相互作用·口袋几何)...', pct: 45 },
-  { stage: 'reason', status: '🧬 AI 推理机制通路...', pct: 70 },
+  { stage: 'reason', status: '🧬 机制推理与因果图生成...', pct: 70 },
   { stage: 'synthesize', status: '🧪 合成报告与验证计划...', pct: 90 },
 ];
 function startLoading() {
@@ -138,7 +183,7 @@ function qualLabel(item) {
     const p = item.confidence;
     qc = p >= 0.70 ? "strong" : p >= 0.45 ? "moderate" : p >= 0.25 ? "weak" : "insufficient";
   }
-  const labels = { strong: "Strong", moderate: "Moderate", weak: "Weak", insufficient: "Low confidence" };
+  const labels = { strong: "强", moderate: "中", weak: "弱", insufficient: "低置信度" };
   const cls = { strong: "ev-label strong", moderate: "ev-label moderate", weak: "ev-label weak", insufficient: "ev-label weak" };
   if (!qc) return "";
   const h = item.calibration_status === "heuristic" ? " ⚠" : "";
@@ -161,22 +206,22 @@ function evidenceCard(item) {
   const desc = item.description || item.reason || item.method || '';
   const impact = item.impact || item.expected_result || '';
   const m = item.measurement;
-  const val = m ? `${m.name}: ${num(m.value, m.unit)}` : "";
+  const val = m ? `${zh(m.name)}: ${num(m.value, zh(m.unit))}` : "";
   const label = qualLabel(item);
   const borderColor = item.status === 'computed' ? 'var(--teal)' :
     (item.priority ? 'var(--blue)' : 'var(--amber)');
   return `<div class="evidence-card" style="border-left-color:${borderColor}">
-    <div class="ev-top"><span class="ev-title">${esc(title)}</span>${label}${item.priority ? `<span style="font-size:.65rem;color:var(--text-muted)">Priority ${item.priority}</span>` : ''}</div>
-    ${desc ? `<div class="ev-desc">${esc(desc)}</div>` : ''}
-    ${impact ? `<div class="ev-desc">${esc(impact)}</div>` : ''}
+    <div class="ev-top"><span class="ev-title">${esc(zh(title))}</span>${label}${item.priority ? `<span style="font-size:.65rem;color:var(--text-muted)">优先级 ${item.priority}</span>` : ''}</div>
+    ${desc ? `<div class="ev-desc">${esc(zh(desc))}</div>` : ''}
+    ${impact ? `<div class="ev-desc">${esc(zh(impact))}</div>` : ''}
     ${val ? `<div class="ev-data">${esc(val)}</div>` : ''}
   </div>`;
 }
 
 function renderQC(qc) {
   if (!qc) return "";
-  const grades = { comparable: "Comparable", partially_comparable: "Partially comparable", poorly_comparable: "Poorly comparable" };
-  return section("Structure Pair QC", grades[qc.grade] || qc.grade, "green") +
+  const grades = { comparable: "可比", partially_comparable: "部分可比", poorly_comparable: "低可比" };
+  return section(zh("Structure Pair QC"), grades[qc.grade] || qc.grade, "green") +
     `<div class="metrics">` +
     (qc.reference_resolution != null ? metricEl("参考分辨率", qc.reference_resolution.toFixed(2), "Å") : "") +
     (qc.mutant_resolution != null ? metricEl("突变体分辨率", qc.mutant_resolution.toFixed(2), "Å") : "") +
@@ -188,8 +233,39 @@ function renderQC(qc) {
     `</div>`;
 }
 
+function renderIdentity(identity) {
+  if (!identity) return "";
+  return section("蛋白身份（来自结构文件头部）", identity.family_hint || "unknown", identity.family_hint ? "green" : "yellow") +
+    `<div style="font-size:.78rem">
+      <div>标题: <code>${esc(identity.title || '—')}</code></div>
+      <div>实体: ${(identity.entity_names||[]).map(n => `<code>${esc(n)}</code>`).join(', ') || '—'}</div>
+      <div>知识库家族: <code>${esc(identity.family_hint || '未识别 — 不附加任何文献证据')}</code></div>
+    </div></div>`;
+}
+
+function renderLiterature(lit) {
+  if (!lit) return "";
+  const entries = Object.values(lit.by_grade || {}).flat();
+  if (!entries.length) {
+    return section(zh("Literature Evidence"), "无匹配条目", "yellow") +
+      `<div style="font-size:.78rem;color:var(--text-muted)">知识库中没有该蛋白家族的已核实文献条目。结论仅基于结构计算，不附加文献推断。</div></div>`;
+  }
+  return section(zh("Literature Evidence"), `${lit.total_entries} 条`, "green") +
+    `<div class="evidence-list">${entries.map(e => `
+      <div class="evidence-card" style="border-left-color:var(--blue)">
+        <div class="ev-top"><span class="ev-title">${esc(e.evidence_id)}</span><span class="ev-label weak">${esc(zh(e.applicability))}</span></div>
+        <div class="ev-desc">${esc(zh(e.claim || ''))}</div>
+        <div class="ev-data">PMID: ${esc(e.pmid || '—')}${e.measured_value != null ? ` · ${esc(e.measured_value)} ${esc(zh(e.measured_unit||''))}` : ''}</div>
+      </div>`).join('')}</div></div>`;
+}
+
 function renderContext(ctx) {
-  if (!ctx || !ctx.structural_differences) return "";
+  if (!ctx) return "";
+  if (ctx.note) {
+    return section(zh("Structural Context"), "未计算", "yellow") +
+      `<div style="font-size:.78rem;color:var(--text-muted)">${esc(ctx.note)}</div></div>`;
+  }
+  if (!ctx.structural_differences) return "";
   const d = ctx.structural_differences || {};
   const ms = ctx.mutation_site || {};
   const lig = ctx.ligand_decomposition || {};
@@ -200,7 +276,7 @@ function renderContext(ctx) {
   if (d.hbond_donor_change && d.hbond_donor_change !== "unchanged") props.push({ l: "H-键供体", v: d.hbond_donor_change });
   if (d.hbond_acceptor_change && d.hbond_acceptor_change !== "unchanged") props.push({ l: "H-键受体", v: d.hbond_acceptor_change });
 
-  return section("Structural Context", "V3", "purple") +
+  return section(zh("Structural Context"), "V3", "purple") +
     `<div class="ctx-grid">` +
     `<div class="ctx-prop"><div class="ctx-prop-label">突变</div><div class="ctx-prop-value">${esc(d.wild_type||'?')} → ${esc(d.mutant||'?')} @ ${esc(ms.residue_label||'?')}</div></div>` +
     `<div class="ctx-prop"><div class="ctx-prop-label">最近配体距离</div><div class="ctx-prop-value">${ms.nearest_ligand_distance||'?'} Å</div></div>` +
@@ -218,14 +294,31 @@ function renderCausalGraph(graph) {
   const lvlColors = { mutation_property: "#dc2626", local_geometry: "#d97706", interaction: "#0891b2", pocket_conformation: "#059669", binding_consequence: "#2563eb", phenotype: "#7c3aed" };
   const lvlNames = { mutation_property: "突变属性", local_geometry: "局部几何", interaction: "相互作用", pocket_conformation: "口袋构象", binding_consequence: "结合影响", phenotype: "表型" };
 
-  return section("Causal Mechanism Graph", "V3", "purple") +
-    `<div class="cg-overview"><div class="cg-dominant">主导: ${esc(graph.dominant_mechanism || '未确定')}</div>` +
-    (graph.alternative_mechanisms && graph.alternative_mechanisms.length ? `<div class="cg-alt">替代: ${graph.alternative_mechanisms.slice(0,3).map(m => esc(m)).join(' · ')}</div>` : "") +
+  return section(zh("Causal Mechanism Graph"), "V3", "purple") +
+    `<div class="cg-overview"><div class="cg-dominant">主导: ${esc(zhPath(graph.dominant_mechanism) || '未确定')}</div>` +
+    (graph.alternative_mechanisms && graph.alternative_mechanisms.length ? `<div class="cg-alt">替代: ${graph.alternative_mechanisms.slice(0,3).map(m => esc(zhPath(m))).join(' · ')}</div>` : "") +
     `</div>` +
-    `<div class="cg-paths">${(graph.paths||[]).slice(0,4).map(p => `<div class="cg-path"><span class="cg-path-rank">#${p.rank}</span><span class="cg-path-label">${esc(p.label.replace(/_/g, ' '))}</span><span class="cg-path-stats">${p.supporting} supporting · ${p.conflicting} conflicting</span></div>`).join('')}</div>` +
-    `<div class="cg-nodes">${(graph.nodes||[]).map(n => `<div class="cg-node" style="border-left-color:${lvlColors[n.level]||'#999'}"><strong>${esc(n.mechanism_label)}</strong><span>${esc(n.description?.slice(0,80)||'')}${(n.description||'').length>80?'…':''}</span></div>`).join('')}</div>` +
-    (graph.key_uncertainties && graph.key_uncertainties.length ? `<div class="cg-uncertainties"><strong>关键不确定性</strong><ul>${graph.key_uncertainties.map(u => `<li>${esc(u)}</li>`).join('')}</ul></div>` : "") +
+    `<div class="cg-paths">${(graph.paths||[]).slice(0,4).map(p => `<div class="cg-path"><span class="cg-path-rank">#${p.rank}</span><span class="cg-path-label">${esc(zhPath(p.label))}</span><span class="cg-path-stats">${p.supporting_evidence_count != null ? p.supporting_evidence_count : p.supporting} 支持 · ${p.conflicting_evidence_count != null ? p.conflicting_evidence_count : p.conflicting} 冲突</span></div>`).join('')}</div>` +
+    `<div class="cg-nodes">${(graph.nodes||[]).map(n => `<div class="cg-node" style="border-left-color:${lvlColors[n.level]||'#999'}"><strong>${esc(zh(n.mechanism_label))}</strong><span>${esc(zh(n.description)?.slice(0,80)||'')}${(n.description||'').length>80?'…':''}</span></div>`).join('')}</div>` +
+    (graph.key_uncertainties && graph.key_uncertainties.length ? `<div class="cg-uncertainties"><strong>关键不确定性</strong><ul>${graph.key_uncertainties.map(u => `<li>${esc(zh(u))}</li>`).join('')}</ul></div>` : "") +
     `</div>`;
+}
+
+function renderLocalization(loc) {
+  if (!loc) return "";
+  const hasMutation = loc.mutation_residue_number != null;
+  const buttons = [];
+  if (hasMutation) {
+    buttons.push(`<button class="btn-ghost loc-btn" data-loc="mutation" style="width:auto;display:inline-block;margin-right:6px">定位突变位点 ${esc(loc.mutation_chain||'')}:${esc(loc.mutation_residue_number)}</button>`);
+  }
+  if (loc.ligand) {
+    buttons.push(`<button class="btn-ghost loc-btn" data-loc="ligand" style="width:auto;display:inline-block;margin-right:6px">定位配体 ${esc(loc.ligand)}</button>`);
+  }
+  if ((loc.neighborhood_4a||[]).length) {
+    buttons.push(`<button class="btn-ghost loc-btn" data-loc="neighbors" style="width:auto;display:inline-block">定位4Å邻域 (${loc.neighborhood_4a.length})</button>`);
+  }
+  if (!buttons.length) return "";
+  return `<div style="margin-top:10px">${buttons.join('')}</div>`;
 }
 
 function renderGapAnalysis(mechanisms, missing) {
@@ -233,10 +326,8 @@ function renderGapAnalysis(mechanisms, missing) {
   const miss = missing || [];
   if (!mechs.length && !miss.length) return "";
 
-  // Build gap rows from missing_evidence when score_breakdown is unavailable
   const rows = [];
   if (miss.length) {
-    // Group missing evidence by type
     const byType = {};
     miss.forEach(m => {
       const t = m.evidence_type || 'other';
@@ -253,7 +344,6 @@ function renderGapAnalysis(mechanisms, missing) {
     }
   }
 
-  // Also include mechanism-level gaps
   mechs.forEach(m => {
     const sb = m.score_breakdown;
     const eg = m.evidence_graph;
@@ -266,11 +356,11 @@ function renderGapAnalysis(mechanisms, missing) {
 
   if (!rows.length) return "";
 
-  return section("Evidence Gap Analysis", "V2", "blue") +
+  return section(zh("Evidence Gap Analysis"), "V2", "blue") +
     rows.map(r => {
       const pct = r.total > 0 ? Math.round(r.covered / r.total * 100) : (r.covered > 0 ? 100 : 0);
       return `<div class="gap-row">
-        <div class="gap-label">${esc(r.label)}</div>
+        <div class="gap-label">${esc(zh(r.label))}</div>
         <div class="gap-bar-wrap"><div class="gap-bar-fill" style="width:${pct}%"></div></div>
         <div class="gap-pct">${r.covered}/${r.total}</div>
         ${r.detail ? `<div style="font-size:.65rem;color:var(--text-muted);grid-column:1/-1">${esc(r.detail)}</div>` : ''}
@@ -286,14 +376,14 @@ function renderSummary(mechanisms, hypotheses, validation) {
   const moderate = mechs.filter(m => m.confidence >= 0.45 && m.confidence < 0.7);
   const weak = mechs.filter(m => m.confidence < 0.45 || m.category === "hypothesized");
 
-  return section("Executive Summary", "", "green") +
+  return section(zh("Executive Summary"), "", "green") +
     `<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">` +
-    `<div style="padding:8px;background:var(--green-light);border-radius:4px"><div style="font-size:.62rem;text-transform:uppercase;letter-spacing:.5px;color:var(--green)">Strongly Supported</div><div style="font-size:.75rem;font-weight:600">${strong.length ? strong.map(m=>esc(m.title)).join(', ') : '—'}</div></div>` +
-    `<div style="padding:8px;background:var(--amber-light);border-radius:4px"><div style="font-size:.62rem;text-transform:uppercase;letter-spacing:.5px;color:var(--amber)">Moderately Supported</div><div style="font-size:.75rem;font-weight:600">${moderate.length ? moderate.map(m=>esc(m.title)).join(', ') : '—'}</div></div>` +
-    `<div style="padding:8px;background:var(--red-light);border-radius:4px"><div style="font-size:.62rem;text-transform:uppercase;letter-spacing:.5px;color:var(--red)">Weakly Supported</div><div style="font-size:.75rem;font-weight:600">${weak.length ? weak.map(m=>esc(m.title)).join(', ') : '—'}</div></div>` +
+    `<div style="padding:8px;background:var(--green-light);border-radius:4px"><div style="font-size:.62rem;text-transform:uppercase;letter-spacing:.5px;color:var(--green)">强支持</div><div style="font-size:.75rem;font-weight:600">${strong.length ? strong.map(m=>esc(zh(m.title))).join(', ') : '—'}</div></div>` +
+    `<div style="padding:8px;background:var(--amber-light);border-radius:4px"><div style="font-size:.62rem;text-transform:uppercase;letter-spacing:.5px;color:var(--amber)">中等支持</div><div style="font-size:.75rem;font-weight:600">${moderate.length ? moderate.map(m=>esc(zh(m.title))).join(', ') : '—'}</div></div>` +
+    `<div style="padding:8px;background:var(--red-light);border-radius:4px"><div style="font-size:.62rem;text-transform:uppercase;letter-spacing:.5px;color:var(--red)">弱支持</div><div style="font-size:.75rem;font-weight:600">${weak.length ? weak.map(m=>esc(zh(m.title))).join(', ') : '—'}</div></div>` +
     `</div>` +
-    (hyps.length ? `<div style="font-size:.78rem;margin:6px 0">功能方向: ${hyps.map(h => `${h.direction==='decrease'?'↓':'↑'} ${esc(h.title)}`).join(' · ')}</div>` : "") +
-    (steps.length ? `<div style="font-size:.72rem;color:var(--text-muted);margin-top:6px">下一步验证: ${steps.map(s => `<strong>P${s.priority}</strong> ${esc(s.objective)}`).join(' → ')}</div>` : "") +
+    (hyps.length ? `<div style="font-size:.78rem;margin:6px 0">功能方向: ${hyps.map(h => `${h.direction==='decrease'?'↓':'↑'} ${esc(zh(h.title))}`).join(' · ')}</div>` : "") +
+    (steps.length ? `<div style="font-size:.72rem;color:var(--text-muted);margin-top:6px">下一步验证: ${steps.map(s => `<strong>P${s.priority}</strong> ${esc(zh(s.objective))}`).join(' → ')}</div>` : "") +
     `</div>`;
 }
 
@@ -302,39 +392,55 @@ function renderReport(data) {
   stopLoading();
   els.loading.classList.add("hidden");
 
-  // Debug: verify data structure
   if (!r || !r.physical_evidence) {
     els.error.textContent = 'Report data structure error: ' + JSON.stringify(Object.keys(data || {})).slice(0, 200);
     els.error.classList.remove("hidden");
     return;
   }
 
+  lastPayload = data.v2_report ? data : null;
+
   const computed = (r.physical_evidence || []).filter(e => e.status === "computed");
   const contact = computed.find(e => e.measurement?.name === "contact_state_delta");
   const distance = computed.find(e => e.measurement?.name === "nearest_heavy_atom_distance_delta");
   const sasa = computed.find(e => e.measurement?.name === "residue_sasa_delta");
 
-  const mChain = r.request?.mutation?.chain || "A";
-  const mResNum = r.request?.mutation?.residue_number || "82";
   const ligId = r.request?.ligand?.identifier || "";
   const refPath = r.request?.structure?.path || "";
   const mutPath = r.request?.mutant_structure?.path || "";
   const refUpId = r.request?.structure?.upload_id || "";
   const mutUpId = r.request?.mutant_structure?.upload_id || "";
 
-  const calStatus = r.calibration_status === "heuristic" ? "heuristic" : "";
+  // Whitelist: only the exact value "calibrated" may render as calibrated.
+  const calStatus = r.calibration_status;
+  const calBadge = calStatus === "calibrated" ? "CALIBRATED"
+    : calStatus === "heuristic" ? "⚠ 启发式（未校准）" : "⚠ 校准状态未知";
 
+  const modeNames = { bidirectional: "双向", forward: "正向", reverse: "反向", analysis: "分析" };
   let html = `
     <div class="rpt-header">
       <div>
-        <div class="rpt-eyebrow">${esc(r.mode || 'analysis')} Report</div>
-        <div class="rpt-title">${esc(r.request?.mutation?.notation || 'Analysis')}</div>
+        <div class="rpt-eyebrow">${esc(modeNames[r.mode] || r.mode || 'analysis')}分析报告</div>
+        <div class="rpt-title">${esc(r.request?.mutation?.notation || '分析')}</div>
         <div class="rpt-subtitle">${esc(r.request?.ligand?.identifier || '')} · ${esc(r.report_id || '')}</div>
       </div>
-      <div class="rpt-badge ${calStatus}">${calStatus === "heuristic" ? "⚠ HEURISTIC" : "CALIBRATED"}</div>
+      <div class="rpt-badge ${calStatus === "heuristic" ? "heuristic" : ""}">${calBadge}</div>
     </div>`;
 
-  // V3 context + causal graph (if available)
+  // Export row (only when a combined V3 payload exists)
+  if (lastPayload) {
+    html += `<div style="margin:10px 0">
+      <button class="btn-ghost export-btn" data-format="json" style="width:auto;display:inline-block;margin-right:6px">导出 JSON</button>
+      <button class="btn-ghost export-btn" data-format="csv" style="width:auto;display:inline-block;margin-right:6px">导出 CSV</button>
+      <button class="btn-ghost export-btn" data-format="pymol" style="width:auto;display:inline-block">导出 PyMOL 脚本</button>
+    </div>`;
+  }
+
+  // Protein identity + literature (V3)
+  if (data.protein_identity) html += renderIdentity(data.protein_identity);
+  if (data.v3_literature) html += renderLiterature(data.v3_literature);
+
+  // V3 context + causal graph
   if (data.v3_context) html += renderContext(data.v3_context);
   if (data.v3_causal_graph) html += renderCausalGraph(data.v3_causal_graph);
 
@@ -345,30 +451,33 @@ function renderReport(data) {
   html += renderQC(r.structure_qc);
 
   // Metrics
-  html += section("Physical Evidence", `${computed.length} computed`, "green") +
+  html += section(zh("Physical Evidence"), `计算 ${computed.length} 项`, "green") +
     `<div class="metrics">` +
     metricEl("计算证据", computed.length, "项") +
-    metricEl("距离变化", distance ? num(distance.measurement?.value, "Å") : "—", "mutant − ref") +
+    metricEl("距离变化", distance ? num(distance.measurement?.value, "Å") : "—", "突变体 − 参考") +
     metricEl("接触变化", contact ? num(contact.measurement?.value) : "—", contact ? "1=新增/-1=丢失" : "单结构") +
-    metricEl("SASA 变化", sasa ? num(sasa.measurement?.value, "Å²") : "—", sasa ? "mutant − ref" : "未比较") +
+    metricEl("SASA 变化", sasa ? num(sasa.measurement?.value, "Å²") : "—", sasa ? "突变体 − 参考" : "未比较") +
     `</div>` +
     `<div class="evidence-list">${r.physical_evidence.map(evidenceCard).join('')}</div>` +
-    (refPath ? `<div style="margin-top:10px"><button class="btn-ghost" data-path="${esc(refPath)}" data-upload="${esc(refUpId)}" data-type="reference" data-chain="${esc(mChain)}" data-resnum="${esc(mResNum)}" data-ligand="${esc(ligId)}" style="width:auto;display:inline-block;margin-right:6px">查看 WT 结构</button>${mutPath ? `<button class="btn-ghost" data-path="${esc(mutPath)}" data-upload="${esc(mutUpId)}" data-type="mutant" data-chain="${esc(mChain)}" data-resnum="${esc(mResNum)}" data-ligand="${esc(ligId)}" style="width:auto;display:inline-block">查看 Mutant 结构</button>` : ""}</div>` : "") +
+    `<div style="margin-top:10px">
+      <button class="btn-ghost struct-btn" data-type="reference" style="width:auto;display:inline-block;margin-right:6px">查看 WT 结构</button>
+      ${mutPath || mutUpId ? `<button class="btn-ghost struct-btn" data-type="mutant" style="width:auto;display:inline-block">查看 Mutant 结构</button>` : ""}
+    </div>` +
     `</div>`;
 
   // Mechanisms
-  html += section("Structural Mechanisms", "", "yellow") +
+  html += section(zh("Structural Mechanisms"), "", "yellow") +
     `<div class="evidence-list">${(r.structural_mechanisms||[]).map(m => evidenceCard(m)).join('')}</div></div>`;
 
   // Functional
   if ((r.functional_hypotheses||[]).length) {
-    html += section("Functional Hypotheses", "", "blue") +
+    html += section(zh("Functional Hypotheses"), "", "blue") +
       `<div class="evidence-list">${r.functional_hypotheses.map(h => evidenceCard(h)).join('')}</div></div>`;
   }
 
   // Consistency
   if ((r.consistency_checks||[]).length) {
-    html += section("Consistency", "", "purple") +
+    html += section(zh("Consistency"), "", "purple") +
       `<div class="evidence-list">${r.consistency_checks.map(c => evidenceCard(c)).join('')}</div></div>`;
   }
 
@@ -377,54 +486,124 @@ function renderReport(data) {
 
   // Missing Evidence + Validation
   if ((r.missing_evidence||[]).length) {
-    html += section("Missing Evidence", "", "yellow") +
+    html += section(zh("Missing Evidence"), "", "yellow") +
       `<div class="evidence-list">${r.missing_evidence.map(e => evidenceCard(e)).join('')}</div></div>`;
   }
   if ((r.validation_plan?.steps||[]).length) {
-    html += section("Validation Plan", "", "blue") +
+    html += section(zh("Validation Plan"), "", "blue") +
       `<div class="evidence-list">${r.validation_plan.steps.map(s => evidenceCard(s)).join('')}</div></div>`;
   }
 
+  // Localization (3D evidence anchoring)
+  if (data.evidence_localization) html += renderLocalization(data.evidence_localization);
+
+  // Limitations
+  if ((r.limitations||[]).length) {
+    html += section(zh("Limitations"), "必读", "red") +
+      `<ul style="font-size:.75rem;color:var(--text-muted);padding-left:18px;margin:6px 0">${r.limitations.map(l => `<li>${esc(zh(l))}</li>`).join('')}</ul></div>`;
+  }
+
   // Calibration warning
-  html += `<div class="cal-warning"><strong>⚠ LEGACY HEURISTIC ENGINE</strong>所有数值评分为未经实验校准的启发式权重。定性标签 (Strong/Moderate/Weak) 仅供排序参考。See V3 Roadmap.</div>`;
+  html += `<div class="cal-warning"><strong>⚠ 未校准启发式评分</strong>所有数值评分为未经实验校准的启发式权重。定性标签 (Strong/Moderate/Weak) 仅供排序参考，不可解释为概率。局部相互作用评分不是 ΔΔG。未提供突变体结构时，不生成任何结构变化。</div>`;
 
   els.report.innerHTML = html;
   els.report.classList.remove("hidden");
 
-  // Wire up 3D viewer buttons
-  els.report.querySelectorAll(".btn-ghost[data-path]").forEach(btn => {
-    btn.addEventListener("click", async () => {
+  // Wire structure viewer buttons
+  els.report.querySelectorAll(".struct-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
       viewerMode = btn.dataset.type;
-      try { showStructure(btn.dataset.path, btn.dataset.chain, btn.dataset.resnum, btn.dataset.ligand, btn.dataset.upload); }
-      catch (e) { showError("3D 加载失败: " + e.message); }
+      structureData.reference = refPath || refUpId ? { pdbText: null, path: refPath, uploadId: refUpId } : null;
+      structureData.mutant = mutPath || mutUpId ? { pdbText: null, path: mutPath, uploadId: mutUpId } : null;
+      $$(".viewer-tab").forEach(x => x.classList.toggle("active", x.dataset.mode === viewerMode));
+      showStructurePanel();
+    });
+  });
+
+  // Wire localization buttons
+  const loc = data.evidence_localization;
+  els.report.querySelectorAll(".loc-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (!viewer) initViewer();
+      const kind = btn.dataset.loc;
+      if (kind === "mutation") {
+        highlightState = { chain: loc.mutation_chain || "", resi: String(loc.mutation_residue_number), ligand: "", neighbors: [] };
+      } else if (kind === "ligand") {
+        highlightState = { chain: "", resi: "", ligand: loc.ligand || "", neighbors: [] };
+      } else if (kind === "neighbors") {
+        highlightState = { chain: "", resi: "", ligand: loc.ligand || "", neighbors: parseNeighborLabels(loc.neighborhood_4a) };
+      }
+      els.viewerPanel.classList.remove("hidden");
+      showStructurePanel();
+    });
+  });
+
+  // Wire export buttons
+  els.report.querySelectorAll(".export-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const fmt = btn.dataset.format;
+      const url = `/export/${encodeURIComponent(lastPayload.report_id)}?format=${fmt}`;
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
     });
   });
 }
 
 // ---------------------------------------------------------------------------
-// Analysis
+// Analysis flows
 // ---------------------------------------------------------------------------
-async function runExample() {
+async function runJsonRequest(payload, endpoint) {
   setLoading(true);
-  try { renderReport(await api("/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(examplePayload) })); }
+  try { renderReport(await api(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })); }
   catch (e) { showError(e.message); }
 }
-async function runReverseExample() {
-  setLoading(true);
-  try { renderReport(await api("/reverse", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(reverseExamplePayload) })); }
-  catch (e) { showError(e.message); }
+
+function runExample() {
+  runJsonRequest(examplePayload, "/v3/analyze");
 }
-async function runV3() {
+function runV3() {
+  const payload = { ...examplePayload };
+  delete payload.phenotype;
+  runJsonRequest(payload, "/v3/analyze");
+}
+function runReverseExample() {
+  runJsonRequest(reverseExamplePayload, "/reverse");
+}
+
+$("#run-example")?.addEventListener("click", runExample);
+$("#run-v3-example")?.addEventListener("click", runV3);
+
+// Real form submission: read the sidebar inputs and send multipart uploads.
+els.form.addEventListener("submit", async e => {
+  e.preventDefault();
+  const refFile = $("#reference-file").files[0];
+  if (!refFile) { showError("请先选择参考结构 (WT) 文件，或点击示例按钮。"); return; }
   setLoading(true);
   try {
-    const v3payload = { ...examplePayload };
-    delete v3payload.phenotype;
-    renderReport(await api("/v3/analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(v3payload) }));
-  } catch (e) { showError(e.message); }
-}
-$("#run-example")?.addEventListener("click", runExample);
-$("#run-reverse-example")?.addEventListener("click", runReverseExample);
-$("#run-v3-example")?.addEventListener("click", runV3);
+    if (analysisMode === "reverse") {
+      const fd = new FormData();
+      fd.append("reference_file", refFile);
+      fd.append("ligand", $("#ligand").value.trim());
+      fd.append("phenotype", $("#phenotype").value);
+      renderReport(await api("/reverse-upload", { method: "POST", body: fd }));
+    } else {
+      const fd = new FormData();
+      fd.append("reference_file", refFile);
+      const mutFile = $("#mutant-file").files[0];
+      if (mutFile) fd.append("mutant_file", mutFile);
+      fd.append("ligand", $("#ligand").value.trim());
+      fd.append("mutation", $("#mutation").value.trim().toUpperCase());
+      const chain = $("#chain").value.trim();
+      if (chain) fd.append("chain", chain);
+      fd.append("phenotype", $("#phenotype").value);
+      renderReport(await api("/v3/analyze-upload", { method: "POST", body: fd }));
+    }
+  } catch (err) { showError(err.message); }
+});
 
 // Mode switching
 $$(".mode-tab").forEach(tab => {
@@ -439,17 +618,6 @@ $$(".mode-tab").forEach(tab => {
     $("#mutant-file-group").style.pointerEvents = isRev ? "none" : "auto";
     $("#mutation").required = !isRev;
   });
-});
-
-// Upload form
-$("#analysis-form")?.addEventListener("submit", async e => {
-  e.preventDefault();
-  setLoading(true);
-  try {
-    const fd = new FormData($("#analysis-form"));
-    const ep = analysisMode === "reverse" ? "/reverse-upload" : "/analyze-upload";
-    renderReport(await api(ep, { method: "POST", body: fd }));
-  } catch (e) { showError(e.message); }
 });
 
 // Health check

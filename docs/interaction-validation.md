@@ -1,156 +1,52 @@
-# Interaction Engine Validation
+# Interaction engine validation against PLIP
 
-> **Status**: Infrastructure ready. PLIP comparison pending Python ≤3.12 environment.
+## Reproducible comparison (2026-09-15)
 
-## Methodology
+PLIP 3.0.1 with OpenBabel 3.2.1 was run on the bundled HIV-1 protease/MK1
+complexes. The WT structure is **1SDT**, V82A is **1SDV**, and L90M is
+**1SDU**. Run `python examples/plip_validation.py` from the repository root
+in a Python 3.12 environment with `pip install -e '.[dev]' plip`; the script
+prints raw counts, protein-residue overlap, and SHA-256 checksums as JSON.
 
-PSF-Reasoner's interaction engine is compared against PLIP (Protein-Ligand
-Interaction Profiler, https://github.com/pharmai/plip) on experimentally
-determined HIV-1 protease—inhibitor complex structures.
+| Complex | H-bonds PSF / PLIP | Hydrophobic atom events PSF / PLIP | Salt bridges PSF / PLIP | Water bridges PSF / PLIP | Hydrophobic residue precision / recall |
+|---|---:|---:|---:|---:|---:|
+| 1SDT WT | 2 / 5 | 33 / 12 | 1 / 2 | 7 / 5 | 11/13 / 11/11 |
+| 1SDV V82A | 2 / 4 | 24 / 11 | 1 / 2 | 6 / 5 | 11/12 / 11/11 |
+| 1SDU L90M | 2 / 7 | 24 / 13 | 1 / 2 | 7 / 5 | 13/13 / 13/13 |
 
-**Reference tool**: PLIP (version TBD)
-**Structures**: HIV-1 protease WT (1SDT) + mutants (1SDU, 1SDV) + MK1 (indinavir)
-**Comparison date**: TBD
+Both tools reported zero pi interactions in these three complexes. PLIP's
+hydrophobic contacts are mostly one reported event per protein residue;
+PSF counts each qualifying atom pair. Raw counts therefore have different
+units of redundancy. At residue level, PLIP's positives were all found by
+PSF in this small set. PSF-only residues were A:ILE84 and B:ILE150 in 1SDT,
+A:ILE84 in 1SDV, and none in 1SDU. These are **PLIP-relative** precision
+and recall values, not accuracy against an experimental ground truth.
 
-## Interaction Type Mapping
+Atom-level inspection found that PSF misses ligand hydroxyl donor H-bonds
+from MK1 O2 to B:ASP125 and MK1 O4 to B:ASP129. PLIP adds polar hydrogens
+and reports these events; the distributed crystal CIFs have no ligand H.
+The PSF ligand bond graph previously discarded explicit hydrogens even when
+present, so it could not type hydroxyl oxygen as a donor. That path is now
+fixed. Inferring an OH donor from a bare C--O distance alone was also tried
+but produced extra contacts to A:ASP25 and duplicate carboxylate oxygens;
+it was not retained. PSF also has a 3.5 Å donor-acceptor cutoff, while PLIP
+reported some donor-acceptor distances above 3.9 Å after protonation.
 
-| PLIP Type | PSF-Reasoner Type | Notes |
-|-----------|-------------------|-------|
-| `hbonds_pdon` + `hbonds_ldon` | `hydrogen_bond` | Direct comparison |
-| `hydrophobic_contacts` | `hydrophobic_contact` | Direct comparison |
-| `saltbridge_lneg` + `saltbridge_pneg` | `salt_bridge` | Direct comparison |
-| `pistacking` | `pi_interaction` | PSF uses single category |
-| `pication_laro` + `pication_paro` | `pi_interaction` | Combined PLIP types → single PSF type |
-| `water_bridges` | `water_bridge` | Direct comparison |
-| `halogen_bonds` | N/A | PLIP-only |
+Salt bridges use different geometry (PSF charged atom pairs; PLIP charge-group
+centers). Water bridges likewise use different partner/geometry filters.
+PLIP is an independent rule-based comparator, not an experimental truth set.
+Its hydrogen addition can be nondeterministic, so the table records one run;
+do not use these three related structures to claim broad performance or tune
+cutoffs. The next validation should add chemically distinct ligands and
+protein families, retain PLIP atom-level output, and use adjudicated examples
+before changing interaction rules.
 
-## Known Systematic Differences
+The comparison API now raises an error when PLIP is unavailable or fails to
+identify MK1, instead of silently interpreting absent reference data as zero
+interactions. `total_agreement_rate` is only the fraction of categories with
+identical raw counts; it is not a scientific accuracy metric.
 
-### Hydrogen Bonds
-- **PSF**: Estimated H-positions from donor geometry (1/2/≥3 base atoms). 110°
-  angle threshold with 90° heavy-atom proxy fallback when no explicit H.
-- **PLIP**: Uses OpenBabel for protonation. Stricter angle criteria.
-- **Expected**: PSF may over-count H-bonds in structures without explicit
-  hydrogens. PLIP may be more conservative.
-
-### Hydrophobic Contacts
-- **PSF**: Residue-template atom typing (C/S atoms) with 4.0 Å cutoff.
-- **PLIP**: Distance-based with OpenBabel atom typing.
-- **Expected**: High agreement. Both use similar distance-based approaches.
-
-### Salt Bridges
-- **PSF**: Charged-residue atom tables (LYS/ARG/HIS positive, ASP/GLU
-  negative) with 4.0 Å cutoff.
-- **PLIP**: Distance + angle criteria.
-- **Expected**: Moderate agreement.
-
-### Pi Interactions
-- **PSF**: Single category based on aromatic residue atom tables (PHE/TYR/
-  TRP/HIS) and centroid distance (5.5 Å). Name-based aromaticity.
-- **PLIP**: Distinguishes pi-stacking (face-to-face, edge-to-face) from
-  pi-cation. Uses SMARTS-based ring perception via OpenBabel.
-- **Expected**: PSF name-based aromaticity is less accurate than PLIP's
-  SMARTS-based detection. PSF may miss some pi interactions and
-  misclassify others.
-
-### Water Bridges
-- **PSF**: Distance-only partner selection (water O within 3.5 Å of both
-  protein and ligand donor/acceptor atoms).
-- **PLIP**: Hydrogen-bond geometry on both sides of the water.
-- **Expected**: PSF may over-count water bridges.
-
-## Results
-
-**Comparison date**: 2026-07-14
-**PLIP version**: 3.0.0
-**Structure**: 1SDT (HIV-1 protease WT + indinavir/MK1, 1.30 Å)
-
-### 1SDT (WT + MK1) — After Parameter Corrections
-
-Three corrections applied based on initial comparison:
-1. Salt bridge cutoff: 4.0 Å → 5.5 Å (aligned with PLIP)
-2. H-bond angle threshold: 110° → 100° (aligned with PLIP)
-3. Hydrophobic: exclude polar carbons (bonded to O/N) in both protein and ligand
-4. Ligand charge: protonatable N atoms treated as potential positive charges
-
-| Interaction Type | PSF Count (before→after) | PLIP Count | Status |
-|-----------------|-------------------------|------------|--------|
-| hydrogen_bond | 2→2 | 5 (2 pdon + 3 ldon) | Still low. Remaining gap likely from ligand donor direction — estimated H positions may not pass geometry check. |
-| hydrophobic_contact | 41→33 | 12 | Improved (3.4x→2.75x). Remaining gap from PLIP's stricter sp3-C-only definition vs PSF's element-based approach. |
-| salt_bridge | 0→1 | 2 (1 lneg + 1 pneg) | Much improved. PSF now detects 1 of 2. Remaining gap: second salt bridge may involve a different charged pair. |
-| pi_interaction | 0 | 0 | Full agreement maintained. |
-| water_bridge | 7 | 5 | Similar before and after (unchanged by parameter corrections). |
-
-### Agreement Summary
-
-| Interaction Type | Agreement | Root Cause of Remaining Differences |
-|-----------------|-----------|-------------------------------------|
-| hydrogen_bond | Partial (2/5) | PSF H-position estimation less accurate than PLIP's OpenBabel explicit protonation. Donor/acceptor typing otherwise correct. |
-| hydrophobic_contact | Partial (33/12) | PSF element-based definition broader than PLIP's sp3-only rule. Remaining gap acceptable given documented conservatism. |
-| salt_bridge | Partial (1/2) | PSF charge inference rule (protonatable N) catches 1 of 2. Second may involve carboxylate group interaction. |
-| pi_interaction | Full (0/0) | Both agree. |
-| water_bridge | Good (7/5) | PSF distance-only method over-counts slightly. PLIP geometry check is stricter. |
-
-## Parameter Adjustments
-
-*To be filled after comparison: any cutoff distances, angle thresholds, or
-typing rules adjusted based on systematic disagreements with PLIP.*
-
-## Running the Comparison
-
-```bash
-# Requires Python ≤3.12 (PLIP depends on OpenBabel)
-python3.12 -m venv .venv312
-.venv312/bin/pip install plip
-
-# Run comparison
-.venv312/bin/python -c "
-from psf_reasoner.evaluation.external_validation import compare_interactions
-from pathlib import Path
-
-result = compare_interactions(Path('examples/data/1sdt.cif'), 'MK1')
-for a in result.by_type:
-    print(f'{a.interaction_type}: PSF={a.psf_count} PLIP={a.plip_count} match={a.match}')
-"
-```
-
-### 1SDV (L90M + MK1)
-
-| Interaction Type | PSF Count | PLIP Count | Notes |
-|-----------------|-----------|------------|-------|
-| hydrogen_bond | 2 | 4 (2 pdon + 2 ldon) | L90M loses 1 H-bond vs WT PLIP count (5→4) |
-| hydrophobic_contact | 24 | 11 | Both tools show fewer contacts vs WT |
-| salt_bridge | 1 | 2 | Same ratio as WT |
-| pi_interaction | 0 | 0 | Consistent |
-| water_bridge | 6 | 5 | Similar to WT |
-
-L90M is a non-active-site mutation at the dimer interface. The interaction
-pattern is similar to WT, consistent with the finding that L90M paradoxically
-enhances indinavir binding (Ki decreases ~6-fold). The structural rearrangement
-at the dimer interface compensates for minor contact losses.
-
-### Cross-Structure Consistency
-
-| Metric | 1SDT (WT) | 1SDV (L90M) |
-|--------|-----------|--------------|
-| PSF H-bonds | 2 | 2 |
-| PLIP H-bonds | 5 | 4 |
-| PSF hydrophobic | 33 | 24 |
-| PLIP hydrophobic | 12 | 11 |
-| PSF salt bridges | 1 | 1 |
-| PLIP salt bridges | 2 | 2 |
-
-Both PSF-Reasoner and PLIP detect the expected trend (L90M similar to WT). PSF
-consistently under-counts H-bonds (estimated H positions vs explicit
-protonation) and over-counts hydrophobic contacts (element-based vs sp3-C
-definition) relative to PLIP. The ratio is consistent across structures,
-suggesting systematic rather than random differences.
-
-## References
-
-- PLIP: Adasme et al. (2021) "PLIP 2021: expanding the scope of the
-  protein–ligand interaction profiler to DNA and RNA." Nucleic Acids Res.
-  49(W1):W530–W534. PMID: 33950225
-- 1SDT/1SDU/1SDV: Mahalingam et al. (2004) "Crystal structures of HIV
-  protease V82A and L90M mutants reveal changes in the indinavir-binding
-  site." Eur. J. Biochem. 271:1516–1524. PMID: 15066177
+During full-suite verification, the CLI's import-time runner was also found
+to capture ambient `PSF_LLM=1` before test environment isolation and route a
+test through the external DeepSeek API. The CLI now creates its runner at
+command invocation, so the provider choice follows the current environment.

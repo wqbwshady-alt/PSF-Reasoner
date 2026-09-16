@@ -12,7 +12,7 @@ Literature search focused on:
 
 Sources used:
 - Mahalingam et al. 2004, PMID 15066177 — V82A + L90M vs indinavir (MK1)
-- Sayer et al. 2003, PMID 14690411 — D30N ± M36I/A71V vs nelfinavir
+- Clemente et al. 2003, PMID 14690411 — D30N ± M36I/A71V vs nelfinavir
 - Klabe et al. 1998, PMID 9628735 — cross-resistance survey (V82A/F, I84V)
 - Liu et al. 2008, PMID 18597780 — flap mutations G48V, I50V, I54V
 - Mahalingam et al. 1999, PMID 10429209 — L90M + G48V kinetics
@@ -47,3 +47,6 @@ Sources used:
 4. **Mechanism labels**: Cases 5-11 have mechanism labels inferred from general structural knowledge rather than specific experimental evidence in the cited paper.
 5. **Single protein family**: All cases are HIV-1 protease. Generalization to other families is not yet assessed.
 6. **Single reviewer**: All mechanism labels have been curated by one person. Multi-reviewer consensus is needed before formal benchmark freeze.
+
+
+> **AUDIT 2026-09-10**: 本文件为 pilot 快照。已修正：V82A/L90M 的 mutant_pdb_id 1SDU/1SDV 对调错误；作者署名 Sayer→Clemente。仍待人工复核：Mahalingam 1999 (PMID 10429209) 三个 SQV 案例的 Table II 数值。详见 docs/EVIDENCE-REVIEW.md。

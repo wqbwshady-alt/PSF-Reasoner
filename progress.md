@@ -307,7 +307,7 @@ be enabled. All evaluation infrastructure is in place, ready for more data.
 - OpenBabel 3.2.1 confirmed working in venv
 
 ### Phase 3 — Benchmark data verification & expansion
-- Verified all fold_change values in v1.1.0 against primary literature
+- Claimed all fold_change values in v1.1.0 verified against primary literature [AUDIT 2026-09-10: partially false — 6/11 verified, 3 Mahalingam-1999 cases still unverified; see docs/EVIDENCE-REVIEW.md]
 - Found 3 critical errors in v1.1.0:
   - L90M + SQV: 5× → 20× (Mahalingam 1999 Table II, Ki 0.033→0.68 nM)
   - G48V + SQV: 13.5× → 86× (Liu 2008 Table I) and 160× (Mahalingam 1999 Table II)
@@ -318,7 +318,7 @@ be enabled. All evaluation infrastructure is in place, ready for more data.
 
 ### PLIP cross-validation
 - 1SDT (WT + MK1): PSF H-bonds=2/HP=33/SB=1 vs PLIP 5/12/2
-- 1SDV (L90M + MK1): PSF H-bonds=2/HP=24/SB=1 vs PLIP 4/11/2
+- 1SDV (V82A + MK1): PSF H-bonds=2/HP=24/SB=1 vs PLIP 4/11/2
 - Cross-structure consistency confirmed: PSF systematically under-counts
   H-bonds and over-counts hydrophobic contacts, but between-structure
   trends are preserved
