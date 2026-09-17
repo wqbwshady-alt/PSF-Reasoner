@@ -269,3 +269,24 @@ class TestUploadMaintenance:
         assert first["age_removed"] == 0
         assert second == {"age_removed": 0, "count_removed": 0}
         assert (upload_dir / "a.pdb").exists()
+
+
+def test_workbench_static_modules_are_served() -> None:
+    client = TestClient(create_app(create_default_runner()))
+
+    index = client.get("/")
+    assert index.status_code == 200
+    assert "modules/main.js" in index.text
+    assert "app.js?v=v5d" not in index.text
+
+    for asset in (
+        "/client/i18n.js",
+        "/client/modules/main.js",
+        "/client/modules/api.js",
+        "/client/modules/loading.js",
+        "/client/modules/viewer.js",
+        "/client/modules/render.js",
+        "/client/modules/form.js",
+    ):
+        response = client.get(asset)
+        assert response.status_code == 200, asset

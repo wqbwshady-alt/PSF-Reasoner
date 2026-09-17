@@ -40,7 +40,7 @@ where = ["src"]
 # The API serves its workbench UI from src/psf_reasoner/api/static;
 # without this the wheel is missing StaticFiles' directory and
 # create_app() crashes at import time in production installs.
-"psf_reasoner.api" = ["static/*"]
+"psf_reasoner.api" = ["static/*", "static/modules/*"]
 
 [tool.pytest.ini_options]
 addopts = "-q"
