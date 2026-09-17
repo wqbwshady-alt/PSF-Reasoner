@@ -25,9 +25,23 @@ class HttpCloudAdapter:
     PhysicalEvidence[] as JSON.
     """
 
-    def __init__(self, base_url: str | None = None, timeout: float = 300.0) -> None:
+    def __init__(
+        self,
+        base_url: str | None = None,
+        timeout: float = 300.0,
+        client: httpx.Client | None = None,
+    ) -> None:
         self._base_url = (base_url or os.environ.get(_DEFAULT_CLOUD_URL_ENV, "")).rstrip("/")
         self._timeout = timeout
+        # Injectable for tests; the adapter never closes a client it was
+        # given, but owns one it creates.
+        self._client = client or httpx.Client()
+        self._owns_client = client is None
+
+    def close(self) -> None:
+        """Release the transport when the adapter owns it."""
+        if self._owns_client:
+            self._client.close()
 
     def fpocket(self, structure: StructureInput) -> tuple[PhysicalEvidence, ...]:
         return self._call("fpocket", structure)
@@ -55,7 +69,7 @@ class HttpCloudAdapter:
         if cloud_secret:
             headers["X-API-Key"] = cloud_secret
 
-        response = httpx.post(
+        response = self._client.post(
             f"{self._base_url}/compute/{tool}",
             json=body,
             headers=headers,

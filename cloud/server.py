@@ -1,6 +1,15 @@
 """Cloud Run service — scientific computation tools behind a REST API.
 
 POST /compute/{tool}  →  FPocket/Coulomb  →  PhysicalEvidence[]
+
+Security posture (see SECURITY.md):
+- /health is public; /compute/* requires X-API-Key == PSF_CLOUD_SECRET
+  and fails closed (503) when no secret is configured.
+- Request bodies are capped at MAX_BODY_BYTES and pdb_data at
+  MAX_PDB_DATA_CHARS; structure text is gemmi-validated before use.
+- A per-client-IP token bucket rate-limits compute requests.  Each
+  instance keeps its own counters, so this is defense in depth behind
+  a load balancer, not a hard global limit.
 """
 
 from __future__ import annotations
@@ -10,18 +19,24 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 import uuid
 from pathlib import Path
 
 import gemmi
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 CLOUD_API_SECRET = os.environ.get("PSF_CLOUD_SECRET")
+MAX_BODY_BYTES = 50 * 1024 * 1024
+MAX_PDB_DATA_CHARS = 18_000_000
 
 
 class CloudComputeRequest(BaseModel):
-    pdb_data: str
+    pdb_data: str = Field(max_length=MAX_PDB_DATA_CHARS)
     params: dict = Field(default_factory=dict)
 
 
@@ -40,14 +55,72 @@ class CloudEvidenceItem(BaseModel):
     contradicts: list[str] = Field(default_factory=list)
 
 
-app = FastAPI(title="PSF Cloud Compute", version="0.3.0")
+app = FastAPI(title="PSF Cloud Compute", version="0.4.0")
 FPOCKET_AVAILABLE = shutil.which("fpocket") is not None
 
 
 def _verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
-    """Reject unauthenticated requests when PSF_CLOUD_SECRET is configured."""
-    if CLOUD_API_SECRET and x_api_key != CLOUD_API_SECRET:
+    """Require a matching API key; fail closed when no secret is configured."""
+    if not CLOUD_API_SECRET:
+        raise HTTPException(
+            503, "PSF_CLOUD_SECRET not configured — compute endpoints are disabled"
+        )
+    if x_api_key != CLOUD_API_SECRET:
         raise HTTPException(401, "unauthorized")
+
+
+class _BodyLimitMiddleware(BaseHTTPMiddleware):
+    """Reject request bodies larger than MAX_BODY_BYTES before they are read."""
+
+    async def dispatch(self, request: Request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length is not None and int(content_length) > MAX_BODY_BYTES:
+            return JSONResponse({"detail": "request body too large"}, status_code=413)
+        return await call_next(request)
+
+
+class _RateLimitMiddleware(BaseHTTPMiddleware):
+    """Per-client-IP token bucket over /compute/*.
+
+    Defense in depth: Cloud Run scales to multiple instances, each with
+    its own counters, so this bounds abuse per instance rather than
+    globally.  See SECURITY.md.
+    """
+
+    def __init__(self, app, *, capacity: int, refill_per_second: float) -> None:
+        super().__init__(app)
+        self._capacity = capacity
+        self._refill = refill_per_second
+        self._buckets: dict[str, tuple[float, float]] = {}
+
+    async def dispatch(self, request: Request, call_next):
+        if not request.url.path.startswith("/compute/"):
+            return await call_next(request)
+        client = _client_ip(request)
+        now = time.monotonic()
+        tokens, last = self._buckets.get(client, (float(self._capacity), now))
+        tokens = min(self._capacity, tokens + (now - last) * self._refill)
+        if tokens < 1.0:
+            self._buckets[client] = (tokens, now)
+            return JSONResponse({"detail": "rate limit exceeded"}, status_code=429)
+        self._buckets[client] = (tokens - 1.0, now)
+        return await call_next(request)
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        # Cloud Run injects this header; take the left-most (client) address.
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+app.add_middleware(_BodyLimitMiddleware)
+app.add_middleware(
+    _RateLimitMiddleware,
+    capacity=int(os.environ.get("PSF_RATE_LIMIT_BURST", "30")),
+    refill_per_second=float(os.environ.get("PSF_RATE_LIMIT_RPS", "5")),
+)
 
 
 @app.get("/health")
@@ -258,18 +331,50 @@ def compute_coulomb(req: CloudComputeRequest) -> list[CloudEvidenceItem]:
 
 
 def _resolve_pdb(req: CloudComputeRequest, work_dir: Path) -> Path:
-    """Write *req.pdb_data* to a work-directory PDB file, converting CIF→PDB."""
+    """Write *req.pdb_data* to a work-directory PDB file, converting CIF→PDB.
+
+    The data is gemmi-validated first so garbage never reaches the
+    compute engines (fpocket's parser included).  Error messages never
+    contain server paths or input content.
+    """
     pdb_path = work_dir / "input.pdb"
     raw = req.pdb_data
     if raw.lstrip().startswith(("data_", "DATA_", "loop_", "LOOP_", "#")):
-        struct = gemmi.read_structure_string(raw)
+        try:
+            struct = gemmi.read_structure_string(raw)
+        except Exception as exc:
+            raise HTTPException(
+                422, f"structure data cannot be parsed: {type(exc).__name__}"
+            ) from exc
+        _require_atoms(struct)
         raw = struct.make_minimal_pdb()
         lines = [l for l in raw.splitlines() if not l.startswith("ANISOU")]
         if lines and not lines[-1].startswith("END"):
             lines.append("END")
         raw = "\n".join(lines)
+    else:
+        try:
+            struct = gemmi.read_structure_string(raw)
+        except Exception as exc:
+            raise HTTPException(
+                422, f"structure data cannot be parsed: {type(exc).__name__}"
+            ) from exc
+        _require_atoms(struct)
     pdb_path.write_text(raw)
     return pdb_path
+
+
+def _require_atoms(structure) -> None:
+    """Reject structures gemmi accepts leniently but that contain no atoms."""
+    atom_count = sum(
+        1
+        for model in structure
+        for chain in model
+        for residue in chain
+        for _ in residue
+    )
+    if atom_count == 0:
+        raise HTTPException(422, "structure data contains no atoms")
 
 
 def _make_evidence(
