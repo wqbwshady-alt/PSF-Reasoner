@@ -1,6 +1,7 @@
 """FastAPI delivery adapter and local analysis workbench."""
 
 from contextlib import asynccontextmanager
+import os
 from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
@@ -14,6 +15,7 @@ from psf_reasoner.application.ports import ReportLookupError, StructureInputErro
 from psf_reasoner.application.runner import AnalysisRunnerProtocol
 from psf_reasoner.bootstrap import create_default_runner
 from psf_reasoner.infrastructure.uploads import maintain_uploads, resolve_upload
+from psf_reasoner.infrastructure.v3_repository import V3ReportNotFoundError, V3ReportRepository
 from psf_reasoner.physical.identity import extract_protein_identity
 from psf_reasoner.schemas.inputs import (
     AnalysisRequest,
@@ -29,10 +31,7 @@ UPLOAD_DIR = Path.cwd() / ".psf_uploads"
 EXAMPLES_DIR = Path(__file__).parents[3] / "examples" / "data"
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 SUPPORTED_STRUCTURE_SUFFIXES = frozenset({".cif", ".mmcif", ".pdb"})
-
-# Combined V3 analysis payloads, keyed by report_id.  Same lifecycle as the
-# in-memory report repository (process-local workbench storage).
-_V3_RESULTS: dict[str, dict] = {}
+DEFAULT_V3_MAX_AGE_DAYS = 30
 
 
 def _resolve_structure_input(si: StructureInput, upload_dir: Path) -> StructureInput:
@@ -119,17 +118,23 @@ def _resolve_request(
 def create_app(
     runner: AnalysisRunnerProtocol | None = None,
     upload_dir: Path | None = None,
+    v3_store: V3ReportRepository | None = None,
 ) -> FastAPI:
-    active_runner = runner or create_default_runner()
+    # The workbench persists reports by default so exports survive
+    # restarts; PSF_PERSIST=0 restores in-memory behaviour.
+    active_runner = runner or create_default_runner(
+        persist=os.environ.get("PSF_PERSIST", "1") != "0"
+    )
     _upload_dir = upload_dir or UPLOAD_DIR
+    _v3_store = v3_store or V3ReportRepository()
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
-        # Directory creation and upload pruning run at startup, never at
-        # import time.  maintain_uploads is idempotent and safe to call
-        # on every start.
+        # Directory creation and pruning run at startup, never at import
+        # time.  Both maintenance calls are idempotent.
         _upload_dir.mkdir(parents=True, exist_ok=True)
         maintain_uploads(_upload_dir)
+        _v3_store.prune_old(max_age_seconds=_v3_max_age_seconds())
         yield
 
     api = FastAPI(
@@ -305,7 +310,7 @@ def create_app(
     @api.post("/v3/analyze", response_model=dict)
     def v3_analyze(request: AnalysisRequest) -> dict:
         """V3 analysis — V2 report + structural context + causal graph + literature."""
-        return _build_v3_payload(active_runner, request, _upload_dir)
+        return _build_v3_payload(active_runner, request, _upload_dir, _v3_store)
 
     @api.post("/v3/analyze-upload", response_model=dict)
     async def v3_analyze_upload(
@@ -332,21 +337,22 @@ def create_app(
             mutation=MutationSpec(notation=mutation, chain=chain or None),
             phenotype=PhenotypeSpec(name=phenotype) if phenotype else None,
         )
-        return _build_v3_payload(active_runner, request, _upload_dir)
+        return _build_v3_payload(active_runner, request, _upload_dir, _v3_store)
 
     @api.get("/export/{report_id}")
     def export_report(report_id: str, format: str = "json") -> PlainTextResponse:
         """Export a completed V3 analysis as JSON, CSV, or a PyMOL script."""
-        payload = _V3_RESULTS.get(report_id)
-        if payload is None:
+        try:
+            payload = _v3_store.get(report_id)
+        except V3ReportNotFoundError as error:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=(
-                    "no exportable V3 analysis found for this report_id. "
-                    "Run a V3 analysis first; exports live for the current "
-                    "server session."
+                    "no V3 analysis found for this report_id.  Run a V3 "
+                    "analysis first; reports are stored on disk and survive "
+                    "restarts."
                 ),
-            )
+            ) from error
         if format == "json":
             content = report_to_json(payload)
             media_type = "application/json"
@@ -370,8 +376,24 @@ def create_app(
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
+    @api.delete("/v3/reports/{report_id}")
+    def delete_v3_report(report_id: str) -> dict:
+        """Delete a stored V3 analysis.  Idempotent."""
+        deleted = _v3_store.delete(report_id)
+        return {"status": "ok", "deleted": deleted}
+
     api.mount("/client", StaticFiles(directory=STATIC_DIR), name="client")
     return api
+
+
+def _v3_max_age_seconds() -> float:
+    """V3 report retention, days (env PSF_V3_MAX_AGE_DAYS, default 30)."""
+    raw = os.environ.get("PSF_V3_MAX_AGE_DAYS", str(DEFAULT_V3_MAX_AGE_DAYS))
+    try:
+        days = float(raw)
+    except ValueError:
+        days = DEFAULT_V3_MAX_AGE_DAYS
+    return max(days, 1.0) * 86_400
 
 
 def _run(runner: AnalysisRunnerProtocol, request: AnalysisRequest) -> PSFReport:
@@ -388,8 +410,12 @@ def _build_v3_payload(
     runner: AnalysisRunnerProtocol,
     request: AnalysisRequest,
     upload_dir: Path,
+    v3_store: V3ReportRepository,
 ) -> dict:
     """Run the full V3 analysis and store the combined payload for export.
+
+    The payload is persisted in the shared SQLite storage so exports
+    survive restarts and work across processes.
 
     Protein identity comes from the structure header, not from the ligand
     abbreviation.  When the identity cannot be determined, literature
@@ -467,7 +493,7 @@ def _build_v3_payload(
             "neighborhood_4a": [n.get("label", "") for n in ctx.neighborhood_4a] if ctx else [],
         },
     }
-    _V3_RESULTS[v2_report.report_id] = payload
+    v3_store.save(payload)
     return payload
 
 
