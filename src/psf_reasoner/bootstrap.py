@@ -7,11 +7,15 @@ functions defined here.
 
 from __future__ import annotations
 
+import logging
 import os
+import shutil
+from functools import partial
 
 from psf_reasoner.application.runner import AnalysisRunner
 from psf_reasoner.application.service import AnalysisService
 from psf_reasoner.infrastructure.cloud_compute import HttpCloudAdapter
+from psf_reasoner.component_status import ComponentStatus, component_registry
 from psf_reasoner.infrastructure.execution import InlineExecutionBackend
 from psf_reasoner.infrastructure.repository import InMemoryReportRepository
 from psf_reasoner.infrastructure.sqlite_repository import SqliteReportRepository
@@ -38,6 +42,9 @@ from psf_reasoner.reasoning.llm_reasoner import (
     LLMReverseReasoner,
 )
 from psf_reasoner.reasoning.ports import LLMProvider
+from psf_reasoner.schemas.report import ReportRuntime
+
+logger = logging.getLogger(__name__)
 
 
 def create_default_service(
@@ -58,10 +65,39 @@ def create_default_service(
         forward_reasoner = LLMForwardReasoner(llm_provider)
         reverse_reasoner = LLMReverseReasoner(llm_provider)
         consistency_checker = LLMConsistencyChecker(llm_provider)
+        component_registry.set(
+            ComponentStatus(
+                "reasoning_engine",
+                enabled=True,
+                available=True,
+                implementation=f"llm:{_llm_provider_name()}",
+            )
+        )
     else:
         forward_reasoner = BaselineForwardReasoner()
         reverse_reasoner = BaselineReverseReasoner()
         consistency_checker = BaselineConsistencyChecker()
+        component_registry.set(
+            ComponentStatus(
+                "reasoning_engine",
+                enabled=False,
+                available=True,
+                implementation="baseline",
+                detail="deterministic local rules (default; set PSF_LLM=1 for LLM reasoning)",
+            )
+        )
+
+    modeler = _mutation_modeler()
+    cloud_adapter = _cloud_adapter()
+    component_registry.set(
+        ComponentStatus(
+            "cloud_adapter",
+            enabled=cloud_adapter is not None,
+            available=cloud_adapter is not None,
+            implementation=cloud_adapter._base_url if cloud_adapter else "disabled",
+            detail="set PSF_CLOUD_URL to offload FPocket/coulombic computation",
+        )
+    )
 
     return AnalysisService(
         evidence_provider=CompositeEvidenceProvider(
@@ -71,12 +107,12 @@ def create_default_service(
             PocketNetworkEvidenceProvider(),
             LocalEnergyEvidenceProvider(),
             HIVProteaseCalibrationProvider(),
-            CloudEvidenceProvider(adapter=_cloud_adapter()),
+            CloudEvidenceProvider(adapter=cloud_adapter),
         ),
         forward_reasoner=forward_reasoner,
         reverse_reasoner=reverse_reasoner,
         consistency_checker=consistency_checker,
-        mutation_modeler=_mutation_modeler(),
+        mutation_modeler=modeler,
     )
 
 
@@ -100,6 +136,7 @@ def create_default_runner(
         service=create_default_service(llm_provider=llm_provider),
         execution=InlineExecutionBackend(),
         reports=repository,
+        runtime_factory=partial(_build_runtime),
     )
 
 
@@ -127,6 +164,15 @@ def _mutation_modeler():
     """
     if os.environ.get("PSF_FOLDX") == "1":
         return FoldXMutationModeler()
+    component_registry.set(
+        ComponentStatus(
+            "mutation_modeler",
+            enabled=False,
+            available=True,
+            implementation="local_side_chain",
+            detail="deterministic side-chain truncation (default; set PSF_FOLDX=1 for FoldX)",
+        )
+    )
     return LocalSideChainMutationModeler()
 
 
@@ -146,10 +192,62 @@ def _auto_llm_provider() -> LLMProvider | None:
         if provider_name == "anthropic":
             from psf_reasoner.infrastructure.anthropic_provider import AnthropicProvider
 
-            return AnthropicProvider()
-        else:
+            provider = AnthropicProvider()
+        elif provider_name == "deepseek":
             from psf_reasoner.infrastructure.deepseek_provider import DeepSeekProvider
 
-            return DeepSeekProvider()
-    except Exception:
+            provider = DeepSeekProvider()
+        else:
+            # Unknown provider names must not silently become deepseek.
+            raise ValueError(f"unknown PSF_LLM_PROVIDER: {provider_name!r}")
+    except Exception as exc:
+        # Log the degradation reason (never credentials) and surface it in
+        # the component registry instead of silently falling back.
+        logger.warning("LLM provider %r unavailable, falling back to baseline: %s", provider_name, exc)
+        component_registry.set(
+            ComponentStatus(
+                "llm",
+                enabled=True,
+                available=False,
+                implementation="baseline",
+                detail=f"{provider_name} unavailable: {type(exc).__name__}",
+            )
+        )
         return None
+
+    component_registry.set(
+        ComponentStatus(
+            "llm",
+            enabled=True,
+            available=True,
+            implementation=f"llm:{provider_name}",
+        )
+    )
+    return provider
+
+
+def _llm_provider_name() -> str:
+    return os.environ.get("PSF_LLM_PROVIDER", "deepseek")
+
+
+def _build_runtime() -> ReportRuntime:
+    """Snapshot the component registry into the report's runtime record."""
+    import gemmi
+
+    reasoning = component_registry.get("reasoning_engine")
+    modeler = component_registry.get("mutation_modeler")
+    foldx = component_registry.get("foldx")
+    tools = {
+        "gemmi": getattr(gemmi, "__version__", "unknown"),
+        "fpocket": "available" if shutil.which("fpocket") else "not-installed",
+    }
+    if foldx is not None:
+        tools["foldx"] = foldx.detail or ("available" if foldx.available else "not-installed")
+    return ReportRuntime(
+        reasoning_engine=reasoning.implementation if reasoning else "unknown",
+        mutation_modeler=modeler.implementation if modeler else "unknown",
+        llm_provider=_llm_provider_name() if os.environ.get("PSF_LLM") == "1" else None,
+        cloud_adapter=os.environ.get("PSF_CLOUD_URL") or None,
+        external_tools=tools,
+        component_status=component_registry.snapshot(),
+    )

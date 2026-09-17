@@ -14,6 +14,7 @@ from psf_reasoner.api.exports import report_to_csv, report_to_json, report_to_py
 from psf_reasoner.application.ports import ReportLookupError, StructureInputError
 from psf_reasoner.application.runner import AnalysisRunnerProtocol
 from psf_reasoner.bootstrap import create_default_runner
+from psf_reasoner.component_status import component_registry
 from psf_reasoner.infrastructure.uploads import (
     InvalidStructureError,
     maintain_uploads,
@@ -150,8 +151,14 @@ def create_app(
     )
 
     @api.get("/health")
-    def health() -> dict[str, str]:
-        return {"status": "ok"}
+    def health() -> dict:
+        """Liveness plus optional-component status.
+
+        The components block reports which optional integrations (LLM,
+        cloud compute, FoldX, …) are enabled, available, and which
+        implementation is actually in use.
+        """
+        return {"status": "ok", "components": component_registry.snapshot()}
 
     @api.get("/v3/status")
     def v3_status() -> dict:
@@ -518,7 +525,7 @@ async def _store_upload(upload: UploadFile, upload_dir: Path) -> Path:
                 size += len(chunk)
                 if size > MAX_UPLOAD_BYTES:
                     raise HTTPException(
-                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                        status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                         detail="structure upload exceeds the 25 MB local limit",
                     )
                 handle.write(chunk)

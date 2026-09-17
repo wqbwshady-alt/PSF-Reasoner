@@ -125,7 +125,8 @@ def _resolution(structure: ParsedStructure) -> float | None:
     try:
         gs = gemmi.read_structure(structure.source_path)
         return gs.resolution  # type: ignore[no-any-return]
-    except Exception:
+    except Exception as exc:
+        _logger.debug("resolution lookup failed for %s: %s", structure.source_path, exc)
         return None
 
 

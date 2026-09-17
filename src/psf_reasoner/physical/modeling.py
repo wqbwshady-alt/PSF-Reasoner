@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
@@ -9,6 +10,7 @@ from tempfile import gettempdir
 from typing import Protocol
 
 from psf_reasoner.identifiers import make_id
+from psf_reasoner.component_status import ComponentStatus, component_registry
 from psf_reasoner.physical.preparation import EXPECTED_HEAVY_ATOMS
 from psf_reasoner.physical.structure import (
     THREE_TO_ONE,
@@ -21,6 +23,8 @@ from psf_reasoner.physical.structure import (
 from psf_reasoner.schemas.common import Provenance, ProvenanceKind
 from psf_reasoner.schemas.evidence import EvidenceStatus, EvidenceType, Measurement, PhysicalEvidence
 from psf_reasoner.schemas.inputs import LigandSpec, MutationSpec, StructureInput
+
+logger = logging.getLogger(__name__)
 
 ONE_TO_THREE = {value: key for key, value in THREE_TO_ONE.items()}
 
@@ -38,7 +42,8 @@ class FoldXMutationModeler:
 
     When FoldX is not available or the mutation is a truncation case
     (target residue is a subset of source), falls back to the local
-    side-chain truncation modeler.
+    side-chain truncation modeler.  Fallbacks are logged and surfaced in
+    the component registry — never silent.
     """
 
     def __init__(
@@ -53,7 +58,19 @@ class FoldXMutationModeler:
         self._output_dir = Path(output_dir or gettempdir()) / "psf_reasoner_models"
         self._foldx_available = shutil.which(foldx_binary) is not None
         self._foldx_binary = foldx_binary
+        self._foldx_version = "unknown"
         self._local = LocalSideChainMutationModeler(parser, output_dir)
+        component_registry.set(
+            ComponentStatus(
+                "foldx",
+                enabled=True,
+                available=self._foldx_available,
+                implementation="foldx" if self._foldx_available else "local_side_chain",
+                detail=(
+                    shutil.which(foldx_binary) or "foldx binary not found on PATH"
+                ),
+            )
+        )
 
     def build(
         self,
@@ -65,8 +82,12 @@ class FoldXMutationModeler:
         if self._foldx_available:
             try:
                 return self._build_with_foldx(reference_structure, mutation, ligand)
-            except MutationModelingUnavailableError:
-                pass
+            except MutationModelingUnavailableError as exc:
+                logger.info(
+                    "FoldX unavailable for %s, using local modeler: %s",
+                    mutation.notation,
+                    exc,
+                )
 
         # Fall back to local modeler (handles truncation cases)
         return self._local.build(reference_structure, mutation, ligand)
@@ -109,6 +130,11 @@ class FoldXMutationModeler:
                 raise MutationModelingUnavailableError(
                     f"FoldX BuildModel failed: {result.stderr[:200]}"
                 )
+
+            # FoldX prints its version banner on the first line of stderr.
+            banner = result.stderr.strip().splitlines()
+            if banner:
+                self._foldx_version = banner[0][:120]
 
             # Find output PDB
             output_pdbs = list(work_dir.glob(f"{input_pdb.stem}_1.pdb"))

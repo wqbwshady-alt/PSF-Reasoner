@@ -14,12 +14,29 @@ from psf_reasoner.schemas.preparation import StructurePreparation, StructureQCRe
 from psf_reasoner.schemas.validation import MissingEvidence, ValidationPlan
 
 
+class ReportRuntime(ScientificModel):
+    """Which engines and tools actually produced this report.
+
+    Records the reasoning engine, mutation modeler, cloud adapter, LLM
+    provider and external tool versions in effect at run time, so every
+    report is reproducible with respect to its software environment.
+    """
+
+    reasoning_engine: str
+    mutation_modeler: str
+    llm_provider: str | None = None
+    cloud_adapter: str | None = None
+    external_tools: dict[str, str] = Field(default_factory=dict)
+    component_status: dict[str, dict[str, object]] = Field(default_factory=dict)
+
+
 class PSFReport(ScientificModel):
     schema_version: str = "1.0.0"
     report_id: str = Field(pattern=r"^report-[a-f0-9]{12}$")
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     mode: AnalysisMode
     request: AnalysisRequest
+    runtime: ReportRuntime | None = None
     structure_preparation: tuple[StructurePreparation, ...] = ()
     structure_qc: StructureQCReport | None = None
     physical_evidence: tuple[PhysicalEvidence, ...] = ()
