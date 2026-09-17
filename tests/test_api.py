@@ -234,3 +234,42 @@ class TestStructureInputBoundary:
         client = TestClient(create_app(create_default_runner(), upload_dir=upload_dir))
         resp = client.get("/structure", params={"path": str(upload_dir / "link.pdb")})
         assert resp.status_code == 403
+
+
+class TestUploadMaintenance:
+    def test_admin_maintain_uploads_route_is_removed(self, tmp_path: Path) -> None:
+        upload_dir = tmp_path / ".psf_uploads"
+        upload_dir.mkdir()
+        client = TestClient(create_app(create_default_runner(), upload_dir=upload_dir))
+        resp = client.post("/admin/maintain-uploads")
+        assert resp.status_code == 404
+
+    def test_startup_cleanup_removes_expired_uploads(
+        self, structure_file: Path, tmp_path: Path
+    ) -> None:
+        import os
+        import time
+
+        upload_dir = tmp_path / ".psf_uploads"
+        upload_dir.mkdir()
+        old = upload_dir / "old.pdb"
+        old.write_text("OLD", encoding="ascii")
+        old_time = time.time() - 48 * 3600
+        os.utime(old, (old_time, old_time))
+
+        app = create_app(create_default_runner(), upload_dir=upload_dir)
+        with TestClient(app):
+            pass  # lifespan runs maintain_uploads on startup
+        assert not old.exists()
+
+    def test_maintenance_is_idempotent(self, tmp_path: Path) -> None:
+        from psf_reasoner.infrastructure.uploads import maintain_uploads
+
+        upload_dir = tmp_path / ".psf_uploads"
+        upload_dir.mkdir()
+        (upload_dir / "a.pdb").write_text("A", encoding="ascii")
+        first = maintain_uploads(upload_dir)
+        second = maintain_uploads(upload_dir)
+        assert first["age_removed"] == 0
+        assert second == {"age_removed": 0, "count_removed": 0}
+        assert (upload_dir / "a.pdb").exists()

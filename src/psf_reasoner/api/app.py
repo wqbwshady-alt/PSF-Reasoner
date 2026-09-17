@@ -1,5 +1,6 @@
 """FastAPI delivery adapter and local analysis workbench."""
 
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
@@ -121,11 +122,21 @@ def create_app(
 ) -> FastAPI:
     active_runner = runner or create_default_runner()
     _upload_dir = upload_dir or UPLOAD_DIR
-    _upload_dir.mkdir(parents=True, exist_ok=True)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        # Directory creation and upload pruning run at startup, never at
+        # import time.  maintain_uploads is idempotent and safe to call
+        # on every start.
+        _upload_dir.mkdir(parents=True, exist_ok=True)
+        maintain_uploads(_upload_dir)
+        yield
+
     api = FastAPI(
         title="PSF-Reasoner API",
         version="0.1.0",
         description="Bidirectional physical-structural-functional reasoning.",
+        lifespan=lifespan,
     )
 
     @api.get("/health")
@@ -358,15 +369,6 @@ def create_app(
             media_type=media_type,
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
-
-    @api.post("/admin/maintain-uploads")
-    def maintain_uploads_endpoint() -> dict:
-        """Remove expired and excess upload files.  Idempotent."""
-        result = maintain_uploads(_upload_dir)
-        return {"status": "ok", **result}
-
-    # Run upload maintenance once at startup.
-    maintain_uploads(_upload_dir)
 
     api.mount("/client", StaticFiles(directory=STATIC_DIR), name="client")
     return api
