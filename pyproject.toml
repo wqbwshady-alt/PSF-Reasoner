@@ -13,6 +13,7 @@ authors = [{ name = "PSF-Reasoner contributors" }]
 dependencies = [
   "fastapi>=0.115,<1",
   "gemmi>=0.6,<1",
+  "httpx>=0.28,<1",
   "pydantic>=2.9,<3",
   "python-multipart>=0.0.20,<1",
   "typer>=0.15,<1",
@@ -21,7 +22,6 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-  "httpx>=0.28,<1",
   "pytest>=8.3,<9",
   "pytest-cov>=6,<7",
   "ruff>=0.9,<1",
@@ -35,6 +35,12 @@ psf = "psf_reasoner.cli:app"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+# The API serves its workbench UI from src/psf_reasoner/api/static;
+# without this the wheel is missing StaticFiles' directory and
+# create_app() crashes at import time in production installs.
+"psf_reasoner.api" = ["static/*"]
 
 [tool.pytest.ini_options]
 addopts = "-q"

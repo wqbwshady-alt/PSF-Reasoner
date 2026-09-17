@@ -55,3 +55,15 @@ jobs:
 
       - name: Run tests
         run: pytest
+
+  prod-imports:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install production dependencies only
+        run: pip install .
+      - name: Import smoke test (production deps only)
+        run: python scripts/smoke_prod_imports.py
