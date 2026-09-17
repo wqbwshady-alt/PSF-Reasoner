@@ -1,4 +1,6 @@
 # Include everything needed for the build
-# Exclude git metadata only
+# Exclude VCS metadata and Python caches only
 .git
 .gitignore
+__pycache__/
+*.pyc

@@ -1,118 +1,91 @@
 # Cloud Run Security Posture
 
-> Last updated: 2026-07-14
+> Last updated: 2026-09-17 (verified against `cloud/server.py`, `cloud/Dockerfile`, `cloud/deploy.sh`)
 
 ## Current Deployment
 
 | Setting | Value |
 |---------|-------|
 | Service | `psf-cloud-compute` |
-| URL | `https://psf-cloud-compute-800903726899.us-central1.run.app` |
 | GCP Project | `800903726899` |
 | Region | `us-central1` |
 | Platform | Cloud Run (managed) |
 | Memory / CPU | 2 GiB / 2 vCPU |
 | Timeout | 300 s |
 | Max instances | 5 |
-| Authentication | **`--allow-unauthenticated`** — fully public |
-| Ingress | `all` (default) |
-| VPC connector | None |
-| Container user | **root** (no `USER` directive) |
+| Authentication | Public ingress (`--allow-unauthenticated`) so `/health` stays probeable; **every `/compute/*` request requires `X-API-Key` == `PSF_CLOUD_SECRET`** |
+| Container user | Unprivileged `appuser` (uid 10001, `USER` directive) |
 | Base image | `ubuntu:24.04` |
+| FPocket | 4.2.3, built at image build time from the official upstream tarball (SHA-256 pinned) |
+| Python deps | Installed into a venv (no `--break-system-packages`) |
 
 ## Exposed Endpoints
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `GET` | `/health` | None | Health check; returns available tools |
-| `POST` | `/compute/fpocket` | None | Pocket detection via FPocket 4.2.3 |
-| `POST` | `/compute/coulomb` | None | Coulombic electrostatics (AMBER ff99) |
+| `POST` | `/compute/fpocket` | `X-API-Key` | Pocket detection via FPocket 4.2.3 |
+| `POST` | `/compute/coulomb` | `X-API-Key` | Coulombic electrostatics (AMBER ff99) |
 
-## Identified Risks
+## Enforced Controls
 
-### CRITICAL — No authentication
-The service is deployed with `--allow-unauthenticated`. Any internet user who
-discovers the URL can invoke all endpoints. IAM grants `roles/run.invoker` to
-`allUsers`. There is no API key, bearer token, or identity-aware proxy.
+### API key authentication (fail-closed)
+`PSF_CLOUD_SECRET` must be configured. When it is not, every compute
+request is refused with **503** (`PSF_CLOUD_SECRET not configured —
+compute endpoints are disabled`). When it is configured, requests
+without a matching `X-API-Key` header are refused with **401**.
+`deploy.sh` refuses to deploy without a secret and injects it into the
+service; the local `HttpCloudAdapter` sends the key automatically from
+the `PSF_CLOUD_SECRET` environment variable. The secret value itself is
+never stored in this repository.
 
-**Recommendation:** Remove `--allow-unauthenticated` from `deploy.sh`. Use a
-service account with `roles/run.invoker` and generate an identity token in
-the local adapter.
+### Input containment
+- `CloudComputeRequest` has **no `structure_path` field** — all compute
+  requests must carry inline `pdb_data` text. The historical arbitrary
+  filesystem-read vector is gone and locked in by a test.
+- `pdb_data` is capped at 18M characters (422 above that) and is
+  gemmi-validated before use, including a zero-atom check (422). Garbage
+  never reaches the compute engines.
+- Request bodies are capped at 50 MB by middleware (413).
 
-### HIGH — `structure_path` field in CloudComputeRequest
-`CloudComputeRequest.structure_path` accepts an arbitrary filesystem path
-string. `_resolve_pdb()` calls `Path(req.structure_path).read_text()` with
-no sanitization, no `resolve()`, and no containment check.
+### Rate limiting
+A per-client-IP token bucket (`PSF_RATE_LIMIT_BURST`, default 30;
+`PSF_RATE_LIMIT_RPS`, default 5) throttles `/compute/*` requests (429).
+**Limitation:** each Cloud Run instance keeps its own counters, so this
+is defense in depth, not a hard global limit. Behind a load balancer,
+capacity scales with instance count. For a hard limit, configure Cloud
+Run request rate limiting or a dedicated gateway.
 
-**Recommendation:** Remove `structure_path` entirely. Require `pdb_data`
-(inline PDB text) for all compute requests. The local adapter already sends
-`pdb_data` exclusively.
+### Non-root container
+The image runs as an unprivileged `appuser` (uid 10001). RCE via a
+parser bug no longer grants root.
 
-### HIGH — Container runs as root
-No `USER` directive in `Dockerfile`. If an attacker achieves RCE (e.g., via
-a vulnerability in FPocket or gemmi), they have full root access to the
-container.
+### Residual risks (accepted)
 
-**Recommendation:** Add `RUN useradd --create-home appuser && USER appuser`
-to `Dockerfile`.
-
-### MEDIUM — No rate limiting
-Only `--max-instances=5` limits concurrency. No request-level rate limiting,
-no IP-based throttling. An attacker can submit many concurrent compute
-requests, consuming project resources.
-
-**Recommendation:** Add FastAPI rate-limiting middleware or configure
-Cloud Run rate limits.
-
-### MEDIUM — No request body size limit
-No `max_body_size` on endpoints. An attacker can send arbitrarily large
-PDB data payloads, consuming memory and CPU.
-
-**Recommendation:** Add body size middleware (e.g., 50 MB cap).
-
-### MEDIUM — FPocket subprocess with attacker-controlled input
-`/compute/fpocket` writes user-supplied PDB data to disk and executes the
-FPocket C binary on it via `subprocess.run()`. Any vulnerability in
-FPocket's PDB parser is exploitable.
-
-**Mitigation:** The `pdb_data` path (inline PDB text) is already the
-primary input path from the local adapter. The `structure_path` removal
-eliminates the filesystem-read vector. The remaining risk is in FPocket
-itself, which is a dependency trade-off.
-
-### LOW — Full git history in Docker build context
-`.gcloudignore` does not exclude `fpocket-src/.git/`. The full FPocket
-source repository (including `.git/`) is included in the Docker build
-context and potentially in the final image.
-
-**Recommendation:** Add `fpocket-src/.git/` to `.gcloudignore`.
-
-### LOW — `--break-system-packages`
-`pip3 install --break-system-packages` bypasses PEP 668. If
-`requirements.txt` were compromised, system Python packages could be
-overwritten.
-
-**Mitigation:** `requirements.txt` is checked into the repository. Use
-a virtual environment or a slimmer base image (e.g., `python:3.12-slim`)
-instead of `ubuntu:24.04`.
+| Risk | Severity | Status | Notes |
+|------|----------|--------|-------|
+| Public ingress for `/health` | LOW | Accepted | Needed for uptime probes. Compute endpoints are key-protected; for a stricter posture, remove `--allow-unauthenticated` in `deploy.sh` and grant `roles/run.invoker` to the caller identity. |
+| FPocket subprocess with user-supplied PDB | MEDIUM | Accepted | Input is gemmi-validated first; the remaining risk is inside FPocket's own parser. Dependency trade-off. |
+| Per-instance rate limiting | LOW | Accepted | Documented above; each instance limits independently. |
 
 ## Local ↔ Cloud Connection
 
 - Local adapter (`HttpCloudAdapter`) connects via HTTPS to
-  `$PSF_CLOUD_URL`.
-- No client authentication — no API key, no identity token, no mTLS.
+  `$PSF_CLOUD_URL` and authenticates with `X-API-Key` from
+  `$PSF_CLOUD_SECRET` (same value deployed to the service).
 - PDB data is sent inline as `pdb_data` in the JSON body.
-- Transport is encrypted (HTTPS), but the server accepts all connections.
+- Transport is encrypted (HTTPS); the server enforces the key on all
+  compute endpoints.
 
 ## Mitigation Status
 
-| Finding | Severity | Status | Notes |
-|---------|----------|--------|-------|
-| No authentication (`--allow-unauthenticated`) | CRITICAL | Open | Requires GCP IAM changes + adapter update |
-| `structure_path` arbitrary file read | HIGH | Open | Remove field from CloudComputeRequest |
-| Container runs as root | HIGH | Open | Add `USER` to Dockerfile |
-| No rate limiting | MEDIUM | Open | |
-| No body size limit | MEDIUM | Open | |
-| FPocket subprocess risk | MEDIUM | Accepted | Dependency trade-off |
-| Git history in build context | LOW | Open | Add to `.gcloudignore` |
-| `--break-system-packages` | LOW | Accepted | Ubuntu 24.04 compatibility |
+| Finding | Severity | Status |
+|---------|----------|--------|
+| No authentication (`--allow-unauthenticated`) | CRITICAL | **Fixed** — API key on all compute endpoints, fail-closed, deploy-time enforced |
+| `structure_path` arbitrary file read | HIGH | **Fixed** — field removed, test-enforced |
+| Container runs as root | HIGH | **Fixed** — `USER appuser` |
+| No rate limiting | MEDIUM | **Fixed (per instance)** — token bucket; limitation documented |
+| No body size limit | MEDIUM | **Fixed** — 50 MB body cap + 18M char pdb_data cap |
+| FPocket subprocess risk | MEDIUM | Accepted — gemmi pre-validation added |
+| Git history in build context | LOW | **Fixed** — FPocket source no longer vendored; downloaded with pinned SHA-256 at build time |
+| `--break-system-packages` | LOW | **Fixed** — dependencies installed into a venv |
