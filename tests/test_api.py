@@ -154,3 +154,83 @@ def test_workbench_is_served_at_root() -> None:
 
     assert response.status_code == 200
     assert "PSF-Reasoner" in response.text
+
+
+class TestStructureInputBoundary:
+    """Raw filesystem paths must never let the API read arbitrary files."""
+
+    def _client(self, upload_dir: Path) -> TestClient:
+        upload_dir.mkdir()
+        return TestClient(create_app(create_default_runner(), upload_dir=upload_dir))
+
+    def test_rejects_arbitrary_existing_file(self, structure_file: Path, tmp_path: Path) -> None:
+        client = self._client(tmp_path / ".psf_uploads")
+        payload = {
+            "structure": {"path": str(structure_file)},  # exists, but outside allowed roots
+            "ligand": {"identifier": "MK1"},
+            "mutation": {"notation": "V82A", "chain": "A"},
+            "phenotype": {"name": "drug_resistance"},
+        }
+        response = client.post("/analyze", json=payload)
+        assert response.status_code == 400
+        assert "upload" in response.json()["detail"].lower()
+
+    def test_rejects_absolute_path(self, tmp_path: Path) -> None:
+        client = self._client(tmp_path / ".psf_uploads")
+        payload = {
+            "structure": {"path": "/etc/hosts"},
+            "ligand": {"identifier": "MK1"},
+            "mutation": {"notation": "V82A", "chain": "A"},
+            "phenotype": {"name": "drug_resistance"},
+        }
+        assert client.post("/analyze", json=payload).status_code == 400
+
+    def test_rejects_parent_traversal(self, tmp_path: Path) -> None:
+        upload_dir = tmp_path / ".psf_uploads"
+        upload_dir.mkdir()
+        secret = tmp_path / "secret.pdb"
+        secret.write_text("ATOM", encoding="ascii")
+        client = TestClient(create_app(create_default_runner(), upload_dir=upload_dir))
+        payload = {
+            "structure": {"path": str(upload_dir / ".." / "secret.pdb")},
+            "ligand": {"identifier": "MK1"},
+            "mutation": {"notation": "V82A", "chain": "A"},
+            "phenotype": {"name": "drug_resistance"},
+        }
+        assert client.post("/analyze", json=payload).status_code == 400
+
+    def test_rejects_symlink_escaping_upload_dir(self, structure_file: Path, tmp_path: Path) -> None:
+        upload_dir = tmp_path / ".psf_uploads"
+        upload_dir.mkdir()
+        (upload_dir / "link.pdb").symlink_to(structure_file)
+        client = TestClient(create_app(create_default_runner(), upload_dir=upload_dir))
+        payload = {
+            "structure": {"path": str(upload_dir / "link.pdb")},
+            "ligand": {"identifier": "MK1"},
+            "mutation": {"notation": "V82A", "chain": "A"},
+            "phenotype": {"name": "drug_resistance"},
+        }
+        assert client.post("/analyze", json=payload).status_code == 400
+
+    def test_accepts_bundled_example(self, tmp_path: Path) -> None:
+        client = self._client(tmp_path / ".psf_uploads")
+        example = Path(__file__).parent.parent / "examples" / "data" / "1sdt.cif"
+        payload = {
+            "structure": {"path": str(example), "format": "mmcif"},
+            "mutant_structure": {"path": str(example.with_name("1sdv.cif")), "format": "mmcif"},
+            "ligand": {"identifier": "MK1"},
+            "mutation": {"notation": "V82A", "chain": "A"},
+            "phenotype": {"name": "drug_resistance"},
+        }
+        response = client.post("/analyze", json=payload)
+        assert response.status_code == 200, response.text
+
+    def test_structure_endpoint_rejects_symlink_escape(
+        self, structure_file: Path, tmp_path: Path
+    ) -> None:
+        upload_dir = tmp_path / ".psf_uploads"
+        upload_dir.mkdir()
+        (upload_dir / "link.pdb").symlink_to(structure_file)
+        client = TestClient(create_app(create_default_runner(), upload_dir=upload_dir))
+        resp = client.get("/structure", params={"path": str(upload_dir / "link.pdb")})
+        assert resp.status_code == 403

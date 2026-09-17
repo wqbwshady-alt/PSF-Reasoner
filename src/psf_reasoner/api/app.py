@@ -38,8 +38,10 @@ def _resolve_structure_input(si: StructureInput, upload_dir: Path) -> StructureI
     """Validate and resolve a ``StructureInput`` for API use.
 
     API endpoints must NOT accept raw filesystem paths.  Callers must either
-    upload a file (multipart) and reference it by ``upload_id``, or use the
-    upload-ID returned by a prior upload.
+    upload a file (multipart) and reference it by ``upload_id``, or use one
+    of the bundled example structures.  The CLI is the entry point for
+    arbitrary user-provided local files — this boundary keeps the web API
+    from reading any path a request happens to name.
 
     Returns a new ``StructureInput`` whose ``path`` is resolved from the
     upload store.  Raises ``HTTPException`` (400) if a raw filesystem path
@@ -65,30 +67,35 @@ def _resolve_structure_input(si: StructureInput, upload_dir: Path) -> StructureI
             model_index=si.model_index,
         )
 
-    # No upload_id — path must be set (enforced by schema validator).
-    # Accept paths inside the upload store or any local file that exists
-    # (the API is a local workbench, not a public service).
+    # No upload_id — path must be set (enforced by schema validator) and
+    # must stay inside the upload store or the bundled examples.  The
+    # resolve()-based containment check also rejects escaping symlinks,
+    # absolute paths, and parent traversal.
     if si.path is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="structure must provide either upload_id or path",
         )
     resolved = Path(si.path).resolve()
-    upload_root = upload_dir.resolve()
-    if str(resolved).startswith(str(upload_root) + "/") or resolved == upload_root:
-        return si
-    # Accept any local file that exists (for CLI/example parity)
-    if resolved.is_file():
-        return si
-
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail=(
-            "Structure file not found. "
-            "Upload the file via multipart form first, then "
-            "reference it by upload_id, or provide a valid local path."
-        ),
-    )
+    allowed_roots = (upload_dir.resolve(), EXAMPLES_DIR.resolve())
+    if not any(root == resolved or root in resolved.parents for root in allowed_roots):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "path is not allowed: the web API only accepts uploaded files "
+                "(by upload_id) or bundled example structures.  Use the CLI "
+                "to analyze an arbitrary local file."
+            ),
+        )
+    if not resolved.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "structure file not found.  Upload the file via multipart "
+                "form first, then reference it by upload_id."
+            ),
+        )
+    return si
 
 
 def _resolve_request(
