@@ -8,6 +8,50 @@ from pathlib import Path
 _DEFAULT_UPLOAD_DIR = Path(".psf_uploads")
 _DEFAULT_MAX_AGE_SECONDS = 86_400  # 24 hours
 _DEFAULT_MAX_COUNT = 100
+MAX_STRUCTURE_MODELS = 100
+MAX_STRUCTURE_ATOMS = 2_000_000
+
+
+class InvalidStructureError(ValueError):
+    """The uploaded file is not a usable protein structure."""
+
+
+def validate_structure_file(path: Path | str) -> None:
+    """Parse *path* with gemmi and reject unusable structures.
+
+    Raises ``InvalidStructureError`` for files gemmi cannot parse, files
+    with no models, zero atoms, or implausible model/atom counts.
+    Error messages never contain filesystem paths or file contents.
+    """
+    import gemmi
+
+    try:
+        structure = gemmi.read_structure(str(path))
+    except Exception as exc:
+        raise InvalidStructureError(
+            f"structure file cannot be parsed: {type(exc).__name__}"
+        ) from exc
+
+    model_count = len(structure)
+    if model_count < 1:
+        raise InvalidStructureError("structure contains no models")
+    if model_count > MAX_STRUCTURE_MODELS:
+        raise InvalidStructureError(
+            f"structure has {model_count} models (limit {MAX_STRUCTURE_MODELS})"
+        )
+    atom_count = sum(
+        1
+        for model in structure
+        for chain in model
+        for residue in chain
+        for _ in residue
+    )
+    if atom_count == 0:
+        raise InvalidStructureError("structure contains no atoms")
+    if atom_count > MAX_STRUCTURE_ATOMS:
+        raise InvalidStructureError(
+            f"structure has {atom_count} atoms (limit {MAX_STRUCTURE_ATOMS})"
+        )
 
 
 def resolve_upload(

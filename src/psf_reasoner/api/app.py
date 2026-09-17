@@ -14,7 +14,12 @@ from psf_reasoner.api.exports import report_to_csv, report_to_json, report_to_py
 from psf_reasoner.application.ports import ReportLookupError, StructureInputError
 from psf_reasoner.application.runner import AnalysisRunnerProtocol
 from psf_reasoner.bootstrap import create_default_runner
-from psf_reasoner.infrastructure.uploads import maintain_uploads, resolve_upload
+from psf_reasoner.infrastructure.uploads import (
+    InvalidStructureError,
+    maintain_uploads,
+    resolve_upload,
+    validate_structure_file,
+)
 from psf_reasoner.infrastructure.v3_repository import V3ReportNotFoundError, V3ReportRepository
 from psf_reasoner.physical.identity import extract_protein_identity
 from psf_reasoner.schemas.inputs import (
@@ -517,6 +522,16 @@ async def _store_upload(upload: UploadFile, upload_dir: Path) -> Path:
                         detail="structure upload exceeds the 25 MB local limit",
                     )
                 handle.write(chunk)
+        # Extension and size alone are not enough: the file must parse as
+        # a usable protein structure.  Rejections delete the written file
+        # and never leak server paths in the error detail.
+        validate_structure_file(destination)
+    except InvalidStructureError as exc:
+        destination.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=str(exc),
+        ) from exc
     except Exception:
         destination.unlink(missing_ok=True)
         raise
