@@ -61,7 +61,9 @@ class TestSqliteReportRepository:
         repo = SqliteReportRepository(db)
         assert repo.delete(report.report_id) is True
         assert repo.delete(report.report_id) is False
-        with pytest.raises(Exception):
+        from psf_reasoner.application.ports import ReportNotFoundError
+
+        with pytest.raises(ReportNotFoundError):
             repo.get(report.report_id)
 
     def test_prune_old(self, bidirectional_request: AnalysisRequest, tmp_path) -> None:

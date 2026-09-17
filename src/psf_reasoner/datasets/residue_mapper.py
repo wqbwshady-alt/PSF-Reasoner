@@ -15,7 +15,8 @@ _KNOWN_OFFSETS: dict[str, dict[str, int]] = {
     # Human DHFR (P00374): PDB numbering typically matches UniProt
     "P00374": {"default": 0},
     # EGFR Kinase domain (P00533): kinase domain starts around 696 in UniProt,
-    # but PDB numbering uses kinase-specific numbering (e.g. T790 in UniProt ≈ T790 in PDB for kinase-only constructs)
+    # but PDB numbering uses kinase-specific numbering (e.g. T790 in UniProt ≈ T790
+    # in PDB for kinase-only constructs)
     "P00533": {"default": 0},
     # ABL1 Kinase (P00519): similar to EGFR, kinase domain numbering
     "P00519": {"default": 0},

@@ -1,15 +1,11 @@
 from psf_reasoner.evaluation.comparison import (
     ComparisonResult,
-    ComparisonSummary,
     ReasonerOutput,
-    compare_reasoners,
-    extract_reasoner_output,
     summarize_comparison,
 )
 from psf_reasoner.evaluation.metrics import (
     CalibrationAnalysis,
     CalibrationBin,
-    MechanismRankingMetrics,
     compute_calibration_analysis,
     compute_mechanism_ranking,
 )
@@ -44,10 +40,13 @@ def _case(**kw) -> BenchmarkCase:
 
 class TestMechanismRankingMetrics:
     def test_empty_mechanisms(self) -> None:
-        from psf_reasoner.schemas.report import PSFReport
         from psf_reasoner.schemas.inputs import (
-            AnalysisRequest, LigandSpec, PhenotypeSpec, StructureInput,
+            AnalysisRequest,
+            LigandSpec,
+            PhenotypeSpec,
+            StructureInput,
         )
+        from psf_reasoner.schemas.report import PSFReport
 
         report = PSFReport(
             report_id="report-123456789012",
@@ -79,7 +78,9 @@ class TestCalibrationAnalysis:
 
     def test_bin_centers_cover_0_to_1(self) -> None:
         analysis = CalibrationAnalysis(
-            benchmark_id="test", n_cases=0, n_held_out=0,
+            benchmark_id="test",
+            n_cases=0,
+            n_held_out=0,
             bins=[
                 CalibrationBin(0.1, 0, 0, 0),
                 CalibrationBin(0.3, 0, 0, 0),
@@ -101,8 +102,10 @@ class TestReasonerComparison:
 
     def test_reasoner_output_fields(self) -> None:
         output = ReasonerOutput(
-            case_id="test", engine="baseline",
-            num_mechanisms=3, top_mechanism_type="pocket_packing",
+            case_id="test",
+            engine="baseline",
+            num_mechanisms=3,
+            top_mechanism_type="pocket_packing",
             top_mechanism_title="Test mechanism",
         )
         assert output.engine == "baseline"
@@ -122,16 +125,23 @@ class TestReasonerComparison:
 
     def test_summary_with_matching_types(self) -> None:
         baseline = ReasonerOutput(
-            case_id="test", engine="baseline",
-            top_mechanism_type="pocket_packing", confidence=0.7,
+            case_id="test",
+            engine="baseline",
+            top_mechanism_type="pocket_packing",
+            confidence=0.7,
         )
         llm = ReasonerOutput(
-            case_id="test", engine="llm",
-            top_mechanism_type="pocket_packing", confidence=0.8,
+            case_id="test",
+            engine="llm",
+            top_mechanism_type="pocket_packing",
+            confidence=0.8,
         )
         result = ComparisonResult(
-            case_id="test", baseline=baseline, llm=llm,
-            mechanism_types_match=True, top_mechanism_jaccard=0.5,
+            case_id="test",
+            baseline=baseline,
+            llm=llm,
+            mechanism_types_match=True,
+            top_mechanism_jaccard=0.5,
         )
         summary = summarize_comparison([result])
         assert summary.mechanism_type_agreement_rate == 1.0

@@ -28,30 +28,18 @@ def validate_structure_file(path: Path | str) -> None:
     try:
         structure = gemmi.read_structure(str(path))
     except Exception as exc:
-        raise InvalidStructureError(
-            f"structure file cannot be parsed: {type(exc).__name__}"
-        ) from exc
+        raise InvalidStructureError(f"structure file cannot be parsed: {type(exc).__name__}") from exc
 
     model_count = len(structure)
     if model_count < 1:
         raise InvalidStructureError("structure contains no models")
     if model_count > MAX_STRUCTURE_MODELS:
-        raise InvalidStructureError(
-            f"structure has {model_count} models (limit {MAX_STRUCTURE_MODELS})"
-        )
-    atom_count = sum(
-        1
-        for model in structure
-        for chain in model
-        for residue in chain
-        for _ in residue
-    )
+        raise InvalidStructureError(f"structure has {model_count} models (limit {MAX_STRUCTURE_MODELS})")
+    atom_count = sum(1 for model in structure for chain in model for residue in chain for _ in residue)
     if atom_count == 0:
         raise InvalidStructureError("structure contains no atoms")
     if atom_count > MAX_STRUCTURE_ATOMS:
-        raise InvalidStructureError(
-            f"structure has {atom_count} atoms (limit {MAX_STRUCTURE_ATOMS})"
-        )
+        raise InvalidStructureError(f"structure has {atom_count} atoms (limit {MAX_STRUCTURE_ATOMS})")
 
 
 def resolve_upload(

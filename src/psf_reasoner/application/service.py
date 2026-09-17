@@ -84,27 +84,22 @@ class AnalysisService:
         known_ids = frozenset(
             claim.id
             for group in (
-                all_evidence, mechanisms, forward.hypotheses,
-                reverse.candidates, checks,
+                all_evidence,
+                mechanisms,
+                forward.hypotheses,
+                reverse.candidates,
+                checks,
             )
             for claim in group
         )
         all_evidence = _sanitize_supports(all_evidence, known_ids)
         mechanisms = _sanitize_supports(mechanisms, known_ids)
-        hypotheses = _sanitize_supports(
-            forward.hypotheses, known_ids
-        )
-        candidates = _sanitize_supports(
-            reverse.candidates, known_ids
-        )
+        hypotheses = _sanitize_supports(forward.hypotheses, known_ids)
+        candidates = _sanitize_supports(reverse.candidates, known_ids)
         # Also filter expected_evidence on ReverseCandidate
         candidates = tuple(
             candidate.model_copy(
-                update={
-                    "expected_evidence": tuple(
-                        e for e in candidate.expected_evidence if e in known_ids
-                    )
-                }
+                update={"expected_evidence": tuple(e for e in candidate.expected_evidence if e in known_ids)}
             )
             if any(e not in known_ids for e in candidate.expected_evidence)
             else candidate
@@ -206,8 +201,6 @@ def _sanitize_supports[T: Claim](claims: tuple[T, ...], known_ids: frozenset[str
         valid_supports = tuple(s for s in claim.supports if s in known_ids)
         valid_contradicts = tuple(c for c in claim.contradicts if c in known_ids)
         if valid_supports != claim.supports or valid_contradicts != claim.contradicts:
-            claim = claim.model_copy(
-                update={"supports": valid_supports, "contradicts": valid_contradicts}
-            )
+            claim = claim.model_copy(update={"supports": valid_supports, "contradicts": valid_contradicts})
         cleaned.append(claim)
     return tuple(cleaned)

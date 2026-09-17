@@ -65,8 +65,7 @@ class V3ReportRepository:
             self._init_db()
             with self._connection() as conn:
                 conn.execute(
-                    "INSERT OR REPLACE INTO v3_reports(report_id, generated_at, payload) "
-                    "VALUES (?, ?, ?)",
+                    "INSERT OR REPLACE INTO v3_reports(report_id, generated_at, payload) VALUES (?, ?, ?)",
                     (
                         report_id,
                         datetime.now(UTC).isoformat(),
@@ -106,9 +105,7 @@ class V3ReportRepository:
         with self._lock:
             self._init_db()
             with self._connection() as conn:
-                rows = conn.execute(
-                    "SELECT report_id FROM v3_reports ORDER BY generated_at DESC"
-                ).fetchall()
+                rows = conn.execute("SELECT report_id FROM v3_reports ORDER BY generated_at DESC").fetchall()
             return tuple(row[0] for row in rows)
 
     def prune_old(self, max_age_seconds: float) -> int:
@@ -132,12 +129,8 @@ class V3ReportRepository:
             return
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connection() as conn:
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
-            )
-            row = conn.execute(
-                "SELECT value FROM schema_meta WHERE key = 'schema_version'"
-            ).fetchone()
+            conn.execute("CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            row = conn.execute("SELECT value FROM schema_meta WHERE key = 'schema_version'").fetchone()
             version = int(row[0]) if row else 0
             for target in range(version + 1, SCHEMA_VERSION + 1):
                 for statement in _MIGRATIONS[target - 1]:

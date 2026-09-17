@@ -16,12 +16,13 @@ class ConsistencyStatus(StrEnum):
 class AgreementDetail(ScientificModel):
     """Breakdown of pathway agreement into physical, functional, phenotype dimensions."""
 
-    physical_agreement: float = Field(default=0.0, ge=0.0, le=1.0,
-                                       description="Evidence-level agreement between forward and reverse")
-    functional_agreement: float = Field(default=0.0, ge=0.0, le=1.0,
-                                        description="Hypothesis-level agreement")
-    phenotype_agreement: float = Field(default=0.0, ge=0.0, le=1.0,
-                                        description="Phenotype-to-mechanism alignment")
+    physical_agreement: float = Field(
+        default=0.0, ge=0.0, le=1.0, description="Evidence-level agreement between forward and reverse"
+    )
+    functional_agreement: float = Field(default=0.0, ge=0.0, le=1.0, description="Hypothesis-level agreement")
+    phenotype_agreement: float = Field(
+        default=0.0, ge=0.0, le=1.0, description="Phenotype-to-mechanism alignment"
+    )
 
 
 class ConsistencyCheck(Claim):

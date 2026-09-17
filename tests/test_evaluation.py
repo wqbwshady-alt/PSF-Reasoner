@@ -55,27 +55,36 @@ class TestBenchmarkCase:
         assert case.mechanism_label is None
 
     def test_mechanism_evidence_defaults_to_none(self) -> None:
-        case = BenchmarkCase(**_minimal_case(
-            mechanism_label=None, mechanism_evidence="none",
-            mechanism_source=None, mechanism_review_status="unreviewed",
-            mechanism_confidence=0.0,
-        ))
+        case = BenchmarkCase(
+            **_minimal_case(
+                mechanism_label=None,
+                mechanism_evidence="none",
+                mechanism_source=None,
+                mechanism_review_status="unreviewed",
+                mechanism_confidence=0.0,
+            )
+        )
         assert case.mechanism_evidence == "none"
         assert case.mechanism_review_status == "unreviewed"
 
     def test_excluded_case_should_record_reason(self) -> None:
-        case = BenchmarkCase(**_minimal_case(
-            excluded_from_calibration=True,
-            exclusion_reason="background mutation M46I present",
-        ))
+        case = BenchmarkCase(
+            **_minimal_case(
+                excluded_from_calibration=True,
+                exclusion_reason="background mutation M46I present",
+            )
+        )
         assert case.excluded_from_calibration is True
         assert case.exclusion_reason is not None
 
     def test_excluded_without_reason_is_valid_but_noted(self) -> None:
         """Schema allows exclusion without reason — curators should fill it in."""
-        case = BenchmarkCase(**_minimal_case(
-            excluded_from_calibration=True, exclusion_reason=None,
-        ))
+        case = BenchmarkCase(
+            **_minimal_case(
+                excluded_from_calibration=True,
+                exclusion_reason=None,
+            )
+        )
         assert case.excluded_from_calibration is True
         assert case.exclusion_reason is None
 
@@ -109,21 +118,25 @@ class TestBenchmarkCase:
         assert case.wt_mutation_background == []
 
     def test_background_mutations_recorded(self) -> None:
-        case = BenchmarkCase(**_minimal_case(
-            wt_mutation_background=["M46I", "I54V"],
-            notes="Clinical isolate with multiple resistance mutations",
-        ))
+        case = BenchmarkCase(
+            **_minimal_case(
+                wt_mutation_background=["M46I", "I54V"],
+                notes="Clinical isolate with multiple resistance mutations",
+            )
+        )
         assert len(case.wt_mutation_background) == 2
 
     def test_list_of_cases_can_be_serialized(self) -> None:
         case1 = BenchmarkCase(**_minimal_case())
-        case2 = BenchmarkCase(**_minimal_case(
-            case_id="hiv1-i84v-mk1",
-            mutation_notation="I84V",
-            mechanism_label=None,
-            mechanism_evidence="none",
-            mechanism_confidence=0.0,
-        ))
+        case2 = BenchmarkCase(
+            **_minimal_case(
+                case_id="hiv1-i84v-mk1",
+                mutation_notation="I84V",
+                mechanism_label=None,
+                mechanism_evidence="none",
+                mechanism_confidence=0.0,
+            )
+        )
         dataset = [case1, case2]
         serialized = json.dumps([c.model_dump() for c in dataset])
         loaded = [BenchmarkCase.model_validate(c) for c in json.loads(serialized)]
@@ -156,9 +169,7 @@ class TestBenchmarkDataset:
     def test_split_assignment(self) -> None:
         dev = BenchmarkCase(**_minimal_case(case_id="dev", split="development"))
         ho = BenchmarkCase(**_minimal_case(case_id="ho", split="held_out"))
-        ds = BenchmarkDataset(
-            benchmark_id="test", version="0.1.0", cases=(dev, ho)
-        )
+        ds = BenchmarkDataset(benchmark_id="test", version="0.1.0", cases=(dev, ho))
         assert len(ds.development_set) == 1
         assert len(ds.held_out_set) == 1
         assert ds.development_set[0].case_id == "dev"
@@ -166,26 +177,30 @@ class TestBenchmarkDataset:
 
     def test_calibration_ready_filters_excluded(self) -> None:
         ok = BenchmarkCase(**_minimal_case(case_id="ok"))
-        excluded = BenchmarkCase(**_minimal_case(
-            case_id="ex", excluded_from_calibration=True,
-            exclusion_reason="no mechanism label",
-            mechanism_label=None, mechanism_evidence="none",
-            mechanism_confidence=0.0,
-        ))
-        ds = BenchmarkDataset(
-            benchmark_id="test", version="0.1.0", cases=(ok, excluded)
+        excluded = BenchmarkCase(
+            **_minimal_case(
+                case_id="ex",
+                excluded_from_calibration=True,
+                exclusion_reason="no mechanism label",
+                mechanism_label=None,
+                mechanism_evidence="none",
+                mechanism_confidence=0.0,
+            )
         )
+        ds = BenchmarkDataset(benchmark_id="test", version="0.1.0", cases=(ok, excluded))
         assert len(ds.calibration_ready) == 1
         assert ds.calibration_ready[0].case_id == "ok"
 
     def test_calibration_ready_filters_no_mechanism_label(self) -> None:
-        no_label = BenchmarkCase(**_minimal_case(
-            case_id="nl", mechanism_label=None, mechanism_evidence="none",
-            mechanism_confidence=0.0,
-        ))
-        ds = BenchmarkDataset(
-            benchmark_id="test", version="0.1.0", cases=(no_label,)
+        no_label = BenchmarkCase(
+            **_minimal_case(
+                case_id="nl",
+                mechanism_label=None,
+                mechanism_evidence="none",
+                mechanism_confidence=0.0,
+            )
         )
+        ds = BenchmarkDataset(benchmark_id="test", version="0.1.0", cases=(no_label,))
         assert len(ds.calibration_ready) == 0
 
     def test_load_benchmark_from_file(self, tmp_path: Path) -> None:

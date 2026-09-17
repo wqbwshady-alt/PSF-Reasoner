@@ -13,8 +13,6 @@ import logging
 import tempfile
 from pathlib import Path
 
-import gemmi
-
 from psf_reasoner.component_status import ComponentStatus, component_registry
 
 logger = logging.getLogger(__name__)
@@ -120,19 +118,14 @@ class OpenBabelAtomTyper:
             result: dict[str, bool] = {}
             for atom in ob.OBMolAtomIter(mol):
                 residue = atom.GetResidue()
-                label = (
-                    f"{residue.GetChain()}:{residue.GetName()}:"
-                    f"{residue.GetNum()}:{atom.GetName()}"
-                )
+                label = f"{residue.GetChain()}:{residue.GetName()}:{residue.GetNum()}:{atom.GetName()}"
                 result[label] = atom.IsAromatic()
             return result
         except Exception as exc:
             logger.debug("OpenBabel aromaticity perception failed, using heuristic fallback: %s", exc)
             return {}
 
-    def get_donors_acceptors(
-        self, pdb_path: Path
-    ) -> tuple[set[str], set[str]]:
+    def get_donors_acceptors(self, pdb_path: Path) -> tuple[set[str], set[str]]:
         """Return (donor_atom_labels, acceptor_atom_labels) from OpenBabel.
 
         Uses OpenBabel's built-in H-bond donor/acceptor SMARTS patterns.
@@ -156,10 +149,7 @@ class OpenBabelAtomTyper:
 
             for atom in ob.OBMolAtomIter(mol):
                 residue = atom.GetResidue()
-                label = (
-                    f"{residue.GetChain()}:{residue.GetName()}:"
-                    f"{residue.GetNum()}:{atom.GetName()}"
-                )
+                label = f"{residue.GetChain()}:{residue.GetName()}:{residue.GetNum()}:{atom.GetName()}"
                 if atom.IsHbondDonor():
                     donors.add(label)
                 if atom.IsHbondAcceptor():

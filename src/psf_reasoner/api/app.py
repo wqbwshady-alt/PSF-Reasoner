@@ -1,7 +1,7 @@
 """FastAPI delivery adapter and local analysis workbench."""
 
-from contextlib import asynccontextmanager
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
 from uuid import uuid4
@@ -128,9 +128,7 @@ def create_app(
 ) -> FastAPI:
     # The workbench persists reports by default so exports survive
     # restarts; PSF_PERSIST=0 restores in-memory behaviour.
-    active_runner = runner or create_default_runner(
-        persist=os.environ.get("PSF_PERSIST", "1") != "0"
-    )
+    active_runner = runner or create_default_runner(persist=os.environ.get("PSF_PERSIST", "1") != "0")
     _upload_dir = upload_dir or UPLOAD_DIR
     _v3_store = v3_store or V3ReportRepository()
 

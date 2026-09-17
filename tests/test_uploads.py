@@ -25,6 +25,7 @@ class TestResolveUpload:
         upload_dir.mkdir()
 
         import pytest
+
         with pytest.raises(FileNotFoundError):
             resolve_upload("missing.pdb", upload_dir)
 
@@ -33,6 +34,7 @@ class TestResolveUpload:
         upload_dir.mkdir()
 
         import pytest
+
         with pytest.raises(ValueError, match="path separator"):
             resolve_upload("../etc/passwd", upload_dir)
 
@@ -41,6 +43,7 @@ class TestResolveUpload:
         upload_dir.mkdir()
 
         import pytest
+
         with pytest.raises(ValueError, match="path separator"):
             resolve_upload("..\\windows\\system32", upload_dir)
 
@@ -53,6 +56,7 @@ class TestResolveUpload:
         (upload_dir / "link.pdb").symlink_to(escape)
 
         import pytest
+
         with pytest.raises(ValueError, match="outside upload"):
             resolve_upload("link.pdb", upload_dir)
 
@@ -68,6 +72,7 @@ class TestPruneOldUploads:
         old.touch(exist_ok=True)
         # Actually set mtime via os.utime
         import os
+
         os.utime(old, (old_mtime, old_mtime))
 
         fresh = upload_dir / "fresh.pdb"

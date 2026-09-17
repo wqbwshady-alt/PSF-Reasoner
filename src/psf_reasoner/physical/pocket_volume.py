@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from math import sqrt
 
-from psf_reasoner.physical.geometry import atom_distance
 from psf_reasoner.physical.structure import AtomRecord, ParsedStructure, ResidueRecord
 
 # Grid resolution in Angstrom per voxel.  0.5 A balances accuracy with
@@ -74,15 +73,13 @@ def grid_pocket_volume(
                     continue
                 # Must not be inside any protein atom
                 inside_protein = any(
-                    (x - pa.x) ** 2 + (y - pa.y) ** 2 + (z - pa.z) ** 2
-                    < _vdw_radius_sq(pa.element)
+                    (x - pa.x) ** 2 + (y - pa.y) ** 2 + (z - pa.z) ** 2 < _vdw_radius_sq(pa.element)
                     for pa in protein_atoms
                 )
                 if not inside_protein:
                     # Must not be inside any ligand atom
                     inside_ligand = any(
-                        (x - la.x) ** 2 + (y - la.y) ** 2 + (z - la.z) ** 2
-                        < _vdw_radius_sq(la.element)
+                        (x - la.x) ** 2 + (y - la.y) ** 2 + (z - la.z) ** 2 < _vdw_radius_sq(la.element)
                         for la in ligand_atoms
                     )
                     if not inside_ligand:
@@ -91,7 +88,7 @@ def grid_pocket_volume(
             y += grid_spacing
         x += grid_spacing
 
-    return cavity_count * (grid_spacing ** 3)
+    return cavity_count * (grid_spacing**3)
 
 
 def shape_complementarity(
@@ -166,9 +163,11 @@ def _sample_ligand_surface(
             theta = 2.0 * pi * i / samples_per_atom
             for j in range(max(4, samples_per_atom // 2)):
                 phi = pi * (j + 0.5) / max(4, samples_per_atom // 2)
-                points.append((
-                    atom.x + r * sin(phi) * cos(theta),
-                    atom.y + r * sin(phi) * sin(theta),
-                    atom.z + r * cos(phi),
-                ))
+                points.append(
+                    (
+                        atom.x + r * sin(phi) * cos(theta),
+                        atom.y + r * sin(phi) * sin(theta),
+                        atom.z + r * cos(phi),
+                    )
+                )
     return tuple(points)

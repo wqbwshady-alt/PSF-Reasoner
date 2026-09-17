@@ -51,8 +51,8 @@ class DatasetQCReport:
 
     def summary(self) -> str:
         lines = [
-            f"Dataset QC Report",
-            f"==================",
+            "Dataset QC Report",
+            "==================",
             f"Total: {self.total_samples}",
             f"  Accepted: {self.accepted}  Pending: {self.pending}  Rejected: {self.rejected}",
             f"  With WT PDB: {self.has_wt_pdb}  With mutant PDB: {self.has_mutant_pdb}",
@@ -61,17 +61,17 @@ class DatasetQCReport:
             f"  Missing PMID: {self.missing_pmid}",
             f"  Background mutations: {self.background_mutation_count}",
             f"  Multi-point: {self.multi_point_mutations}",
-            f"",
-            f"Protein systems:",
+            "",
+            "Protein systems:",
         ]
         for protein, count in sorted(self.protein_systems.items()):
             lines.append(f"  {protein}: {count}")
-        lines.append(f"")
-        lines.append(f"Assay types:")
+        lines.append("")
+        lines.append("Assay types:")
         for assay, count in sorted(self.assay_types.items()):
             lines.append(f"  {assay}: {count}")
         if self.sample_issues:
-            lines.append(f"")
+            lines.append("")
             lines.append(f"Sample issues ({len(self.sample_issues)}):")
             for issue in self.sample_issues[:10]:
                 lines.append(f"  {issue['sample_id']}: {issue['issue']}")

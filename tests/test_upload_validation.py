@@ -33,9 +33,10 @@ def _post_file(client: TestClient, name: str, content: bytes, fields: dict | Non
 
 def test_valid_mmcif_upload_accepted(tmp_path: Path) -> None:
     client = _client(tmp_path)
-    with open(REPO_ROOT / "examples/data/1sdt.cif", "rb") as f1, open(
-        REPO_ROOT / "examples/data/1sdv.cif", "rb"
-    ) as f2:
+    with (
+        open(REPO_ROOT / "examples/data/1sdt.cif", "rb") as f1,
+        open(REPO_ROOT / "examples/data/1sdv.cif", "rb") as f2,
+    ):
         resp = client.post(
             "/v3/analyze-upload",
             files={

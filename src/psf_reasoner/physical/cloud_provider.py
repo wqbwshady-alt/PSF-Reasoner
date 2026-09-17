@@ -48,9 +48,7 @@ class CloudEvidenceProvider:
 
         return tuple(items)
 
-    def _collect_tool(
-        self, tool: str, structure: StructureInput
-    ) -> tuple[PhysicalEvidence, ...]:
+    def _collect_tool(self, tool: str, structure: StructureInput) -> tuple[PhysicalEvidence, ...]:
         call = getattr(self._adapter, tool)
         try:
             return tuple(call(structure))

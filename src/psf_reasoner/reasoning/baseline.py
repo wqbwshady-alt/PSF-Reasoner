@@ -18,7 +18,12 @@ from psf_reasoner.schemas.evidence import (
     Measurement,
     PhysicalEvidence,
 )
-from psf_reasoner.schemas.function import FunctionalHypothesis, FunctionType, ReverseCandidate, SupportCoverage
+from psf_reasoner.schemas.function import (
+    FunctionalHypothesis,
+    FunctionType,
+    ReverseCandidate,
+    SupportCoverage,
+)
 from psf_reasoner.schemas.inputs import AnalysisRequest
 from psf_reasoner.schemas.mechanisms import (
     EvidenceGraph,
@@ -28,7 +33,7 @@ from psf_reasoner.schemas.mechanisms import (
     MissingEvidenceNode,
     StructuralMechanism,
 )
-from psf_reasoner.schemas.validation import MissingEvidence, ValidationKind, ValidationRoadmap, ValidationStep
+from psf_reasoner.schemas.validation import MissingEvidence, ValidationKind, ValidationStep
 
 
 def _rule_provenance(rule: str) -> tuple[Provenance, ...]:
@@ -87,7 +92,9 @@ class BaselineForwardReasoner:
         )
         packing_direction = Direction.DECREASE if size_direction == Direction.DECREASE else Direction.CHANGE
         packing_score = _evidence_support_score(evidence, MechanismType.POCKET_PACKING)
-        packing_confidence = _bounded((0.63 if size_direction == Direction.DECREASE else 0.47) + packing_score)
+        packing_confidence = _bounded(
+            (0.63 if size_direction == Direction.DECREASE else 0.47) + packing_score
+        )
         mechanism = StructuralMechanism(
             id=make_id("mechanism", "forward_pocket_packing", mutation.notation),
             title="Candidate pocket-packing change",
@@ -124,9 +131,7 @@ class BaselineForwardReasoner:
             network_evidence = tuple(
                 item.id for item in evidence if item.evidence_type is EvidenceType.RESIDUE_NETWORK
             )
-            network_conf = _bounded(
-                0.48 + _evidence_support_score(evidence, MechanismType.RESIDUE_NETWORK)
-            )
+            network_conf = _bounded(0.48 + _evidence_support_score(evidence, MechanismType.RESIDUE_NETWORK))
             mechanisms.append(
                 StructuralMechanism(
                     id=make_id("mechanism", "forward_residue_network", mutation.notation),
@@ -184,7 +189,9 @@ class BaselineForwardReasoner:
                         f"{mutation.notation} contact shell and ligand {request.ligand.identifier}"
                     ),
                     confidence=anchoring_conf,
-                    provenance=_rule_provenance("typed interaction deltas -> ligand anchoring mechanism [LEGACY HEURISTIC]"),
+                    provenance=_rule_provenance(
+                        "typed interaction deltas -> ligand anchoring mechanism [LEGACY HEURISTIC]"
+                    ),
                     supports=anchoring_evidence,
                     limitations=(
                         "Interaction counts are local structural signatures, not occupancies "
@@ -230,7 +237,8 @@ class BaselineForwardReasoner:
             ),
             support_coverage=SupportCoverage(
                 current_evidence=tuple(
-                    item.id for item in evidence
+                    item.id
+                    for item in evidence
                     if item.status is EvidenceStatus.COMPUTED
                     and item.evidence_type in {EvidenceType.RESIDUE_CONTACT, EvidenceType.HYDROPHOBIC_CONTACT}
                 ),
@@ -267,7 +275,8 @@ class BaselineForwardReasoner:
             ),
             support_coverage=SupportCoverage(
                 current_evidence=tuple(
-                    item.id for item in evidence
+                    item.id
+                    for item in evidence
                     if item.status is EvidenceStatus.COMPUTED
                     and item.evidence_type in {EvidenceType.ENERGY_COMPONENT, EvidenceType.RESIDUE_CONTACT}
                 ),
@@ -355,8 +364,13 @@ class BaselineForwardReasoner:
                 priority=4,
                 kind=ValidationKind.MOLECULAR_DYNAMICS,
                 objective="Characterize conformational dynamics and interaction occupancies.",
-                method="Run MD simulations for WT and mutant; compute contact occupancies, RMSF, hydrogen-bond lifetimes.",
-                expected_result="MD-derived occupancies and dynamics should corroborate structural mechanisms.",
+                method=(
+                    "Run MD simulations for WT and mutant; compute contact occupancies, "
+                    "RMSF, hydrogen-bond lifetimes."
+                ),
+                expected_result=(
+                    "MD-derived occupancies and dynamics should corroborate structural mechanisms."
+                ),
                 addresses=(missing_contacts.id, missing_energy.id),
             ),
             ValidationStep(
@@ -598,7 +612,9 @@ class BaselineReverseReasoner:
                 Provenance(kind=ProvenanceKind.INPUT, source="analysis request phenotype"),
                 *_rule_provenance("phenotype -> candidate structural mechanism"),
             ),
-            limitations=("This mechanism is reverse-inferred and requires physical evidence. [LEGACY HEURISTIC]",),
+            limitations=(
+                "This mechanism is reverse-inferred and requires physical evidence. [LEGACY HEURISTIC]",
+            ),
             category=category,
             calibration_status=CalibrationStatus.HEURISTIC,
             qualitative_confidence=_qualitative(confidence),
@@ -698,11 +714,14 @@ class BaselineConsistencyChecker:
                 ),
                 agreement_detail=AgreementDetail(
                     physical_agreement=round(
-                        min(forward_by_type[mechanism_type].confidence,
-                            reverse_by_type[mechanism_type].confidence), 3),
+                        min(
+                            forward_by_type[mechanism_type].confidence,
+                            reverse_by_type[mechanism_type].confidence,
+                        ),
+                        3,
+                    ),
                     functional_agreement=round(_consistency_bonus(evidence, mechanism_type), 3),
-                    phenotype_agreement=round(
-                        0.5 + 0.5 * _consistency_bonus(evidence, mechanism_type), 3),
+                    phenotype_agreement=round(0.5 + 0.5 * _consistency_bonus(evidence, mechanism_type), 3),
                 ),
             )
             for mechanism_type in shared
@@ -828,17 +847,17 @@ def _build_missing_nodes(
             (EvidenceType.HYDROGEN_BOND, "Hydrogen bond occupancy"),
             (EvidenceType.ENERGY_COMPONENT, "Anchor-point energy"),
         ),
-        MechanismType.RESIDUE_NETWORK: (
-            (EvidenceType.POCKET_GEOMETRY, "Network topology change magnitude"),
-        ),
+        MechanismType.RESIDUE_NETWORK: ((EvidenceType.POCKET_GEOMETRY, "Network topology change magnitude"),),
     }
     nodes: list[MissingEvidenceNode] = []
     for ev_type, importance in missing_defs.get(mechanism_type, ()):
         if ev_type not in present_types:
-            nodes.append(MissingEvidenceNode(
-                evidence_label=ev_type.value,
-                importance=importance,
-            ))
+            nodes.append(
+                MissingEvidenceNode(
+                    evidence_label=ev_type.value,
+                    importance=importance,
+                )
+            )
     return nodes
 
 

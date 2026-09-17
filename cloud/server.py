@@ -21,6 +21,7 @@ import subprocess
 import tempfile
 import time
 import uuid
+from contextlib import suppress
 from pathlib import Path
 
 import gemmi
@@ -41,7 +42,7 @@ class CloudComputeRequest(BaseModel):
 
 
 class CloudEvidenceItem(BaseModel):
-    id: str  # noqa: A003
+    id: str
     title: str
     description: str
     evidence_type: str
@@ -62,9 +63,7 @@ FPOCKET_AVAILABLE = shutil.which("fpocket") is not None
 def _verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
     """Require a matching API key; fail closed when no secret is configured."""
     if not CLOUD_API_SECRET:
-        raise HTTPException(
-            503, "PSF_CLOUD_SECRET not configured — compute endpoints are disabled"
-        )
+        raise HTTPException(503, "PSF_CLOUD_SECRET not configured — compute endpoints are disabled")
     if x_api_key != CLOUD_API_SECRET:
         raise HTTPException(401, "unauthorized")
 
@@ -157,7 +156,7 @@ def compute_fpocket(req: CloudComputeRequest) -> list[CloudEvidenceItem]:
             raise HTTPException(422, f"fpocket failed: {result.stderr[:500]}")
         pockets = _parse_fpocket_output(work_dir, pdb_path.stem)
     except subprocess.TimeoutExpired:
-        raise HTTPException(504, "fpocket timed out")
+        raise HTTPException(504, "fpocket timed out") from None
     finally:
         _rmtree_safe(work_dir)
 
@@ -287,9 +286,9 @@ def compute_coulomb(req: CloudComputeRequest) -> list[CloudEvidenceItem]:
 
         total_e = 0.0
         n_pairs = 0
-        for lx, ly, lz, lelem, lres, latom in ligand_atoms:
+        for lx, ly, lz, lelem, _lres, _latom in ligand_atoms:
             lq = _LIG_CHARGE.get(lelem, 0.0)
-            for px, py, pz, pelem, pres, patom, pq in protein_atoms:
+            for px, py, pz, _pelem, _pres, _patom, pq in protein_atoms:
                 if pq is None:
                     continue
                 r = math.sqrt((lx - px) ** 2 + (ly - py) ** 2 + (lz - pz) ** 2)
@@ -343,12 +342,10 @@ def _resolve_pdb(req: CloudComputeRequest, work_dir: Path) -> Path:
         try:
             struct = gemmi.read_structure_string(raw)
         except Exception as exc:
-            raise HTTPException(
-                422, f"structure data cannot be parsed: {type(exc).__name__}"
-            ) from exc
+            raise HTTPException(422, f"structure data cannot be parsed: {type(exc).__name__}") from exc
         _require_atoms(struct)
         raw = struct.make_minimal_pdb()
-        lines = [l for l in raw.splitlines() if not l.startswith("ANISOU")]
+        lines = [line for line in raw.splitlines() if not line.startswith("ANISOU")]
         if lines and not lines[-1].startswith("END"):
             lines.append("END")
         raw = "\n".join(lines)
@@ -356,9 +353,7 @@ def _resolve_pdb(req: CloudComputeRequest, work_dir: Path) -> Path:
         try:
             struct = gemmi.read_structure_string(raw)
         except Exception as exc:
-            raise HTTPException(
-                422, f"structure data cannot be parsed: {type(exc).__name__}"
-            ) from exc
+            raise HTTPException(422, f"structure data cannot be parsed: {type(exc).__name__}") from exc
         _require_atoms(struct)
     pdb_path.write_text(raw)
     return pdb_path
@@ -366,13 +361,7 @@ def _resolve_pdb(req: CloudComputeRequest, work_dir: Path) -> Path:
 
 def _require_atoms(structure) -> None:
     """Reject structures gemmi accepts leniently but that contain no atoms."""
-    atom_count = sum(
-        1
-        for model in structure
-        for chain in model
-        for residue in chain
-        for _ in residue
-    )
+    atom_count = sum(1 for model in structure for chain in model for residue in chain for _ in residue)
     if atom_count == 0:
         raise HTTPException(422, "structure data contains no atoms")
 
@@ -414,15 +403,11 @@ def _parse_pocket_info(info_files: list[Path]) -> list[dict]:
             for line in f.read_text().splitlines():
                 line = line.strip()
                 if "Volume" in line:
-                    try:
+                    with suppress(Exception):
                         pkt["volume"] = float(line.split()[-1])
-                    except Exception:
-                        pass
                 elif "Druggability Score" in line:
-                    try:
+                    with suppress(Exception):
                         pkt["druggability_score"] = float(line.split(":")[-1].strip())
-                    except Exception:
-                        pass
             if pkt:
                 pockets.append(pkt)
         except Exception:
@@ -431,7 +416,5 @@ def _parse_pocket_info(info_files: list[Path]) -> list[dict]:
 
 
 def _rmtree_safe(path: Path) -> None:
-    try:
+    with suppress(Exception):
         shutil.rmtree(path)
-    except Exception:
-        pass

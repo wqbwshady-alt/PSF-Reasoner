@@ -13,11 +13,11 @@ from enum import StrEnum
 class EnsembleKind(StrEnum):
     """Type of ensemble data."""
 
-    CRYSTAL_PAIR = "crystal_pair"          # WT + mutant crystal structures
-    NMR_ENSEMBLE = "nmr_ensemble"          # NMR model ensemble
-    MULTI_PDB = "multi_pdb"                # Multiple PDB entries
-    MD_SNAPSHOTS = "md_snapshots"           # User-provided MD frames
-    RELAXED_MODELS = "relaxed_models"       # Multiple relaxed conformations
+    CRYSTAL_PAIR = "crystal_pair"  # WT + mutant crystal structures
+    NMR_ENSEMBLE = "nmr_ensemble"  # NMR model ensemble
+    MULTI_PDB = "multi_pdb"  # Multiple PDB entries
+    MD_SNAPSHOTS = "md_snapshots"  # User-provided MD frames
+    RELAXED_MODELS = "relaxed_models"  # Multiple relaxed conformations
 
 
 @dataclass
@@ -25,10 +25,10 @@ class EnsembleMember:
     """One member of a conformational ensemble."""
 
     member_id: str
-    source_path: str      # PDB/mmCIF file path
+    source_path: str  # PDB/mmCIF file path
     model_index: int = 0  # which model in the file
-    label: str = ""       # "WT_frame_0", "mutant_relaxed_3", etc.
-    role: str = ""        # "reference", "mutant", "replica"
+    label: str = ""  # "WT_frame_0", "mutant_relaxed_3", etc.
+    role: str = ""  # "reference", "mutant", "replica"
 
 
 @dataclass
@@ -68,7 +68,7 @@ class EnsembleContactOccupancy:
     residue_label: str
     ligand_label: str
     cutoff_angstrom: float
-    occupancy: float          # 0.0–1.0
+    occupancy: float  # 0.0–1.0
     n_present: int
     n_total: int
     mean_distance: float

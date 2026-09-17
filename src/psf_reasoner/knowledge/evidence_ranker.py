@@ -7,7 +7,7 @@ grade that determines its weight in the reasoning engine.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import IntEnum
 
 from psf_reasoner.knowledge.entity_normalizer import EvidenceApplicability
@@ -16,21 +16,21 @@ from psf_reasoner.knowledge.entity_normalizer import EvidenceApplicability
 class EvidenceGrade(IntEnum):
     """Composite evidence quality grade (1 = highest, 5 = lowest)."""
 
-    GRADE_1_DIRECT = 1    # exact match, quantitative, curated
-    GRADE_2_STRONG = 2    # same site, quantitative, reported
+    GRADE_1_DIRECT = 1  # exact match, quantitative, curated
+    GRADE_2_STRONG = 2  # same site, quantitative, reported
     GRADE_3_MODERATE = 3  # same protein, mechanistic, qualitative or inferred
-    GRADE_4_WEAK = 4      # family analogy or general principle
+    GRADE_4_WEAK = 4  # family analogy or general principle
     GRADE_5_IRRELEVANT = 5  # too distant to be useful
 
 
 class MeasurementType(IntEnum):
     """Experimental measurement reliability (lower = more reliable)."""
 
-    CURATED_DDG = 1           # manually curated ΔΔG from dedicated database
-    REPORTED_KI_KD = 2        # published Ki/Kd/IC50
+    CURATED_DDG = 1  # manually curated ΔΔG from dedicated database
+    REPORTED_KI_KD = 2  # published Ki/Kd/IC50
     STRUCTURAL_INFERENCE = 3  # structural observation (e.g. "contact lost")
     COMPUTATIONAL_PREDICTION = 4  # MD, docking, or other in silico
-    QUALITATIVE_OBSERVATION = 5   # "confers resistance" without quantitative data
+    QUALITATIVE_OBSERVATION = 5  # "confers resistance" without quantitative data
 
 
 @dataclass

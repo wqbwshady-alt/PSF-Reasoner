@@ -61,9 +61,7 @@ def test_default_runner_is_baseline_and_status_reflected(monkeypatch: pytest.Mon
     assert modeler is not None and modeler.implementation == "local_side_chain"
 
 
-def test_report_records_runtime_components(
-    structure_file: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_report_records_runtime_components(structure_file: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("PSF_LLM", raising=False)
     monkeypatch.delenv("PSF_CLOUD_URL", raising=False)
     runner = create_default_runner()
@@ -86,9 +84,7 @@ def test_health_reports_component_status(tmp_path: Path) -> None:
     assert "reasoning_engine" in data["components"]
 
 
-def test_cloud_provider_failure_is_logged_not_suppressed(
-    monkeypatch: pytest.MonkeyPatch, caplog
-) -> None:
+def test_cloud_provider_failure_is_logged_not_suppressed(monkeypatch: pytest.MonkeyPatch, caplog) -> None:
     from psf_reasoner.physical.cloud_provider import CloudEvidenceProvider
 
     class BrokenAdapter:
@@ -107,9 +103,7 @@ def test_cloud_provider_failure_is_logged_not_suppressed(
     assert "ATOM" not in caplog.text
 
 
-def test_foldx_unavailable_is_logged_and_falls_back(
-    monkeypatch: pytest.MonkeyPatch, caplog
-) -> None:
+def test_foldx_unavailable_is_logged_and_falls_back(monkeypatch: pytest.MonkeyPatch, caplog) -> None:
     from psf_reasoner.physical.modeling import FoldXMutationModeler
 
     with caplog.at_level(logging.INFO, logger="psf_reasoner.physical.modeling"):

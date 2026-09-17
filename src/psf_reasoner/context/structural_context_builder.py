@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from psf_reasoner.context.ligand_fragmenter import LigandDecomposition, decompose_ligand
+from psf_reasoner.context.ligand_fragmenter import decompose_ligand
 from psf_reasoner.context.residue_role_annotator import (
     ResidueRole,
     annotate_mutation_site,
@@ -27,13 +27,12 @@ from psf_reasoner.context.residue_role_annotator import (
 )
 from psf_reasoner.physical.geometry import atom_distance
 from psf_reasoner.physical.structure import (
-    AtomRecord,
     ParsedStructure,
     ResidueRecord,
     StructureParser,
 )
 from psf_reasoner.schemas.inputs import AnalysisRequest
-from psf_reasoner.schemas.preparation import QCGrade, StructureQCReport
+from psf_reasoner.schemas.preparation import StructureQCReport
 
 
 @dataclass
@@ -54,12 +53,12 @@ class NeighborhoodResidue:
 class StructuralDifferences:
     """Atom-level WT vs mutant differences at the mutation site."""
 
-    sidechain_volume_change: str = ""       # "increased" | "decreased" | "unchanged"
-    polarity_change: str = ""               # "polar_added" | "polar_removed" | "unchanged"
-    charge_change: str = ""                 # "+1" | "-1" | "0" | etc.
-    aromaticity_change: str = ""            # "aromatic_added" | "aromatic_removed" | "unchanged"
-    hbond_donor_change: str = ""            # "gained" | "lost" | "unchanged"
-    hbond_acceptor_change: str = ""         # "gained" | "lost" | "unchanged"
+    sidechain_volume_change: str = ""  # "increased" | "decreased" | "unchanged"
+    polarity_change: str = ""  # "polar_added" | "polar_removed" | "unchanged"
+    charge_change: str = ""  # "+1" | "-1" | "0" | etc.
+    aromaticity_change: str = ""  # "aromatic_added" | "aromatic_removed" | "unchanged"
+    hbond_donor_change: str = ""  # "gained" | "lost" | "unchanged"
+    hbond_acceptor_change: str = ""  # "gained" | "lost" | "unchanged"
     contact_changes: list[dict] = field(default_factory=list)
     interaction_changes: list[dict] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
@@ -151,7 +150,8 @@ class StructuralContextBuilder:
             mut_sites = mutant.locate_mutant_residues(request.mutation)
             if ref_sites and mut_sites:
                 ctx.mutation_site = annotate_mutation_site(
-                    ref_sites[0], ref_ligand,
+                    ref_sites[0],
+                    ref_ligand,
                     protein_family_hint=protein_family_hint,
                 )
                 # Add mutant residue info
@@ -196,8 +196,12 @@ class StructuralContextBuilder:
         # -- Structural differences ----------------------------------------
         if request.mutation and ref_sites and mut_sites:
             ctx.structural_differences = self._compare_residues(
-                ref_sites[0], mut_sites[0],
-                reference, mutant, ref_ligand, mut_ligand,
+                ref_sites[0],
+                mut_sites[0],
+                reference,
+                mutant,
+                ref_ligand,
+                mut_ligand,
             )
 
         return ctx
@@ -232,38 +236,33 @@ class StructuralContextBuilder:
             if not res_atoms or not center_atoms:
                 continue
 
-            min_dist = min(
-                atom_distance(ra, ca)
-                for ra in res_atoms
-                for ca in center_atoms
-            )
+            min_dist = min(atom_distance(ra, ca) for ra in res_atoms for ca in center_atoms)
             if min_dist > radius:
                 continue
 
             # Distance to ligand
             lig_dist = None
             if ligand_atoms:
-                lig_dist = min(
-                    atom_distance(ra, la)
-                    for ra in res_atoms
-                    for la in ligand_atoms
-                )
+                lig_dist = min(atom_distance(ra, la) for ra in res_atoms for la in ligand_atoms)
 
             roles = classify_residue_role(
-                residue, ligand,
+                residue,
+                ligand,
                 protein_family_hint=protein_family_hint,
             )
 
-            results.append(NeighborhoodResidue(
-                label=label,
-                residue_name=residue.identity.name,
-                chain=residue.identity.chain,
-                number=residue.identity.number,
-                distance_to_mutation=round(min_dist, 3),
-                distance_to_ligand=round(lig_dist, 3) if lig_dist is not None else None,
-                roles=sorted(r.value for r in roles),
-                is_catalytic=ResidueRole.CATALYTIC in roles,
-            ))
+            results.append(
+                NeighborhoodResidue(
+                    label=label,
+                    residue_name=residue.identity.name,
+                    chain=residue.identity.chain,
+                    number=residue.identity.number,
+                    distance_to_mutation=round(min_dist, 3),
+                    distance_to_ligand=round(lig_dist, 3) if lig_dist is not None else None,
+                    roles=sorted(r.value for r in roles),
+                    is_catalytic=ResidueRole.CATALYTIC in roles,
+                )
+            )
 
         results.sort(key=lambda r: r.distance_to_mutation)
         return [
@@ -383,12 +382,10 @@ class StructuralContextBuilder:
                     mut_contacts.append((ma.label, la.label, round(d, 3)))
 
         differences["reference_contacts"] = [
-            {"residue_atom": c[0], "ligand_atom": c[1], "distance": c[2]}
-            for c in ref_contacts
+            {"residue_atom": c[0], "ligand_atom": c[1], "distance": c[2]} for c in ref_contacts
         ]
         differences["mutant_contacts"] = [
-            {"residue_atom": c[0], "ligand_atom": c[1], "distance": c[2]}
-            for c in mut_contacts
+            {"residue_atom": c[0], "ligand_atom": c[1], "distance": c[2]} for c in mut_contacts
         ]
         differences["contact_count_delta"] = len(mut_contacts) - len(ref_contacts)
 
@@ -400,26 +397,166 @@ class StructuralContextBuilder:
 # ---------------------------------------------------------------------------
 
 _RESIDUE_PROPERTIES: dict[str, dict] = {
-    "ALA": {"volume": 88.6, "polar": False, "charge": 0, "aromatic": False, "hbond_donor": False, "hbond_acceptor": False},
-    "ARG": {"volume": 173.4, "polar": True, "charge": 1, "aromatic": False, "hbond_donor": True, "hbond_acceptor": False},
-    "ASN": {"volume": 114.1, "polar": True, "charge": 0, "aromatic": False, "hbond_donor": True, "hbond_acceptor": True},
-    "ASP": {"volume": 111.1, "polar": True, "charge": -1, "aromatic": False, "hbond_donor": False, "hbond_acceptor": True},
-    "CYS": {"volume": 108.5, "polar": False, "charge": 0, "aromatic": False, "hbond_donor": True, "hbond_acceptor": False},
-    "GLN": {"volume": 143.8, "polar": True, "charge": 0, "aromatic": False, "hbond_donor": True, "hbond_acceptor": True},
-    "GLU": {"volume": 138.4, "polar": True, "charge": -1, "aromatic": False, "hbond_donor": False, "hbond_acceptor": True},
-    "GLY": {"volume": 60.1, "polar": False, "charge": 0, "aromatic": False, "hbond_donor": False, "hbond_acceptor": False},
-    "HIS": {"volume": 153.2, "polar": True, "charge": 0, "aromatic": True, "hbond_donor": True, "hbond_acceptor": True},
-    "ILE": {"volume": 166.7, "polar": False, "charge": 0, "aromatic": False, "hbond_donor": False, "hbond_acceptor": False},
-    "LEU": {"volume": 166.7, "polar": False, "charge": 0, "aromatic": False, "hbond_donor": False, "hbond_acceptor": False},
-    "LYS": {"volume": 168.6, "polar": True, "charge": 1, "aromatic": False, "hbond_donor": True, "hbond_acceptor": False},
-    "MET": {"volume": 162.9, "polar": False, "charge": 0, "aromatic": False, "hbond_donor": False, "hbond_acceptor": False},
-    "PHE": {"volume": 189.9, "polar": False, "charge": 0, "aromatic": True, "hbond_donor": False, "hbond_acceptor": False},
-    "PRO": {"volume": 112.7, "polar": False, "charge": 0, "aromatic": False, "hbond_donor": False, "hbond_acceptor": False},
-    "SER": {"volume": 89.0, "polar": True, "charge": 0, "aromatic": False, "hbond_donor": True, "hbond_acceptor": True},
-    "THR": {"volume": 116.1, "polar": True, "charge": 0, "aromatic": False, "hbond_donor": True, "hbond_acceptor": True},
-    "TRP": {"volume": 227.8, "polar": False, "charge": 0, "aromatic": True, "hbond_donor": True, "hbond_acceptor": False},
-    "TYR": {"volume": 193.6, "polar": True, "charge": 0, "aromatic": True, "hbond_donor": True, "hbond_acceptor": True},
-    "VAL": {"volume": 140.0, "polar": False, "charge": 0, "aromatic": False, "hbond_donor": False, "hbond_acceptor": False},
+    "ALA": {
+        "volume": 88.6,
+        "polar": False,
+        "charge": 0,
+        "aromatic": False,
+        "hbond_donor": False,
+        "hbond_acceptor": False,
+    },
+    "ARG": {
+        "volume": 173.4,
+        "polar": True,
+        "charge": 1,
+        "aromatic": False,
+        "hbond_donor": True,
+        "hbond_acceptor": False,
+    },
+    "ASN": {
+        "volume": 114.1,
+        "polar": True,
+        "charge": 0,
+        "aromatic": False,
+        "hbond_donor": True,
+        "hbond_acceptor": True,
+    },
+    "ASP": {
+        "volume": 111.1,
+        "polar": True,
+        "charge": -1,
+        "aromatic": False,
+        "hbond_donor": False,
+        "hbond_acceptor": True,
+    },
+    "CYS": {
+        "volume": 108.5,
+        "polar": False,
+        "charge": 0,
+        "aromatic": False,
+        "hbond_donor": True,
+        "hbond_acceptor": False,
+    },
+    "GLN": {
+        "volume": 143.8,
+        "polar": True,
+        "charge": 0,
+        "aromatic": False,
+        "hbond_donor": True,
+        "hbond_acceptor": True,
+    },
+    "GLU": {
+        "volume": 138.4,
+        "polar": True,
+        "charge": -1,
+        "aromatic": False,
+        "hbond_donor": False,
+        "hbond_acceptor": True,
+    },
+    "GLY": {
+        "volume": 60.1,
+        "polar": False,
+        "charge": 0,
+        "aromatic": False,
+        "hbond_donor": False,
+        "hbond_acceptor": False,
+    },
+    "HIS": {
+        "volume": 153.2,
+        "polar": True,
+        "charge": 0,
+        "aromatic": True,
+        "hbond_donor": True,
+        "hbond_acceptor": True,
+    },
+    "ILE": {
+        "volume": 166.7,
+        "polar": False,
+        "charge": 0,
+        "aromatic": False,
+        "hbond_donor": False,
+        "hbond_acceptor": False,
+    },
+    "LEU": {
+        "volume": 166.7,
+        "polar": False,
+        "charge": 0,
+        "aromatic": False,
+        "hbond_donor": False,
+        "hbond_acceptor": False,
+    },
+    "LYS": {
+        "volume": 168.6,
+        "polar": True,
+        "charge": 1,
+        "aromatic": False,
+        "hbond_donor": True,
+        "hbond_acceptor": False,
+    },
+    "MET": {
+        "volume": 162.9,
+        "polar": False,
+        "charge": 0,
+        "aromatic": False,
+        "hbond_donor": False,
+        "hbond_acceptor": False,
+    },
+    "PHE": {
+        "volume": 189.9,
+        "polar": False,
+        "charge": 0,
+        "aromatic": True,
+        "hbond_donor": False,
+        "hbond_acceptor": False,
+    },
+    "PRO": {
+        "volume": 112.7,
+        "polar": False,
+        "charge": 0,
+        "aromatic": False,
+        "hbond_donor": False,
+        "hbond_acceptor": False,
+    },
+    "SER": {
+        "volume": 89.0,
+        "polar": True,
+        "charge": 0,
+        "aromatic": False,
+        "hbond_donor": True,
+        "hbond_acceptor": True,
+    },
+    "THR": {
+        "volume": 116.1,
+        "polar": True,
+        "charge": 0,
+        "aromatic": False,
+        "hbond_donor": True,
+        "hbond_acceptor": True,
+    },
+    "TRP": {
+        "volume": 227.8,
+        "polar": False,
+        "charge": 0,
+        "aromatic": True,
+        "hbond_donor": True,
+        "hbond_acceptor": False,
+    },
+    "TYR": {
+        "volume": 193.6,
+        "polar": True,
+        "charge": 0,
+        "aromatic": True,
+        "hbond_donor": True,
+        "hbond_acceptor": True,
+    },
+    "VAL": {
+        "volume": 140.0,
+        "polar": False,
+        "charge": 0,
+        "aromatic": False,
+        "hbond_donor": False,
+        "hbond_acceptor": False,
+    },
 }
 
 

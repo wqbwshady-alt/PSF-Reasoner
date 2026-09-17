@@ -9,8 +9,8 @@ from pathlib import Path
 from tempfile import gettempdir
 from typing import Protocol
 
-from psf_reasoner.identifiers import make_id
 from psf_reasoner.component_status import ComponentStatus, component_registry
+from psf_reasoner.identifiers import make_id
 from psf_reasoner.physical.preparation import EXPECTED_HEAVY_ATOMS
 from psf_reasoner.physical.structure import (
     THREE_TO_ONE,
@@ -66,9 +66,7 @@ class FoldXMutationModeler:
                 enabled=True,
                 available=self._foldx_available,
                 implementation="foldx" if self._foldx_available else "local_side_chain",
-                detail=(
-                    shutil.which(foldx_binary) or "foldx binary not found on PATH"
-                ),
+                detail=(shutil.which(foldx_binary) or "foldx binary not found on PATH"),
             )
         )
 
@@ -103,7 +101,7 @@ class FoldXMutationModeler:
         import tempfile
         from pathlib import Path as P
 
-        parsed = self._parser.parse(reference_structure)
+        self._parser.parse(reference_structure)  # validate the input before invoking FoldX
         mutation_code = f"{mutation.wild_type}{mutation.residue_number}{mutation.mutant};"
 
         work_dir = P(tempfile.mkdtemp(prefix="foldx_"))
@@ -127,9 +125,7 @@ class FoldXMutationModeler:
             )
 
             if result.returncode != 0:
-                raise MutationModelingUnavailableError(
-                    f"FoldX BuildModel failed: {result.stderr[:200]}"
-                )
+                raise MutationModelingUnavailableError(f"FoldX BuildModel failed: {result.stderr[:200]}")
 
             # FoldX prints its version banner on the first line of stderr.
             banner = result.stderr.strip().splitlines()
@@ -139,9 +135,7 @@ class FoldXMutationModeler:
             # Find output PDB
             output_pdbs = list(work_dir.glob(f"{input_pdb.stem}_1.pdb"))
             if not output_pdbs:
-                raise MutationModelingUnavailableError(
-                    "FoldX did not produce output PDB"
-                )
+                raise MutationModelingUnavailableError("FoldX did not produce output PDB")
 
             output_path = self._output_dir / f"{input_pdb.stem}_{mutation.notation}_foldx.pdb"
             self._output_dir.mkdir(parents=True, exist_ok=True)
@@ -191,8 +185,7 @@ class FoldXMutationModeler:
                         "FoldX BuildModel performs local optimization only — "
                         "no global backbone relaxation or MD.",
                         "Accuracy depends on the FoldX energy function version.",
-                        "Generated model is a computational prediction, not an "
-                        "experimental structure.",
+                        "Generated model is a computational prediction, not an experimental structure.",
                     ),
                 ),
             )

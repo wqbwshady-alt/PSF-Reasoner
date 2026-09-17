@@ -75,9 +75,7 @@ class TestV3Repository:
         V3ReportRepository(db).save(_payload())
         V3ReportRepository(db)  # re-open: migrations must be idempotent
         with sqlite3.connect(str(db)) as conn:
-            row = conn.execute(
-                "SELECT value FROM schema_meta WHERE key = 'schema_version'"
-            ).fetchone()
+            row = conn.execute("SELECT value FROM schema_meta WHERE key = 'schema_version'").fetchone()
         assert row and int(row[0]) >= 1
 
     def test_concurrent_save_and_get(self, tmp_path: Path) -> None:

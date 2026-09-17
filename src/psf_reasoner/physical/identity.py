@@ -8,10 +8,13 @@ the ligand abbreviation.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import gemmi
+
+logger = logging.getLogger(__name__)
 
 # Keyword → knowledge-layer family key.  Keys must match the registration
 # keys in knowledge/literature_evidence.py.
@@ -55,7 +58,7 @@ def extract_protein_identity(structure_path: str | Path) -> ProteinIdentity:
     try:
         structure = gemmi.read_structure(str(structure_path))
     except Exception as exc:
-        _logger.debug("structure identity extraction failed: %s", exc)
+        logger.debug("structure identity extraction failed: %s", exc)
         return ProteinIdentity(source="unreadable structure")
 
     info = structure.info

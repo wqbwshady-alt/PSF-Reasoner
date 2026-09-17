@@ -56,9 +56,7 @@ class SqliteReportRepository:
         with self._lock:
             self._init_db()
             with self._connection() as conn:
-                row = conn.execute(
-                    "SELECT payload FROM reports WHERE report_id = ?", (report_id,)
-                ).fetchone()
+                row = conn.execute("SELECT payload FROM reports WHERE report_id = ?", (report_id,)).fetchone()
         if row is None:
             raise ReportNotFoundError(report_id)
         return PSFReport.model_validate_json(row[0])
@@ -68,9 +66,7 @@ class SqliteReportRepository:
         with self._lock:
             self._init_db()
             with self._connection() as conn:
-                rows = conn.execute(
-                    "SELECT report_id FROM reports ORDER BY generated_at DESC"
-                ).fetchall()
+                rows = conn.execute("SELECT report_id FROM reports ORDER BY generated_at DESC").fetchall()
         return tuple(row[0] for row in rows)
 
     def delete(self, report_id: str) -> bool:

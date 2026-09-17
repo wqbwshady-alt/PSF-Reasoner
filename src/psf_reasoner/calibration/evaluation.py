@@ -7,7 +7,6 @@ data leakage, plus calibration metrics (AUROC, Brier score, ECE).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from math import exp, log
 
 
 @dataclass
@@ -37,13 +36,13 @@ class EvaluationMetrics:
     auprc: float = 0.0  # Area under precision-recall curve
 
     # Regression (for continuous labels like ddG)
-    mae: float = 0.0    # Mean absolute error
-    rmse: float = 0.0   # Root mean square error
-    r2: float = 0.0     # R² score
+    mae: float = 0.0  # Mean absolute error
+    rmse: float = 0.0  # Root mean square error
+    r2: float = 0.0  # R² score
 
     # Calibration
     brier_score: float = 0.0
-    ece: float = 0.0    # Expected calibration error
+    ece: float = 0.0  # Expected calibration error
     calibration_slope: float = 1.0
     calibration_intercept: float = 0.0
 
@@ -122,10 +121,12 @@ def compute_binary_metrics(
     y_binary = [1.0 if p >= threshold else 0.0 for p in y_pred]
 
     # Confusion matrix
-    tp = sum(1 for t, p in zip(y_true, y_binary) if t >= 0.5 and p >= 0.5)
-    tn = sum(1 for t, p in zip(y_true, y_binary) if t < 0.5 and p < 0.5)
-    fp = sum(1 for t, p in zip(y_true, y_binary) if t < 0.5 and p >= 0.5)
-    fn = sum(1 for t, p in zip(y_true, y_binary) if t >= 0.5 and p < 0.5)
+    # y_true and y_pred are independent caller-supplied lists (no length
+    # contract): strict=False keeps the historical silent-truncation behaviour.
+    tp = sum(1 for t, p in zip(y_true, y_binary, strict=False) if t >= 0.5 and p >= 0.5)
+    tn = sum(1 for t, p in zip(y_true, y_binary, strict=False) if t < 0.5 and p < 0.5)
+    fp = sum(1 for t, p in zip(y_true, y_binary, strict=False) if t < 0.5 and p >= 0.5)
+    fn = sum(1 for t, p in zip(y_true, y_binary, strict=False) if t >= 0.5 and p < 0.5)
 
     accuracy = (tp + tn) / n if n > 0 else 0.0
     precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
@@ -140,7 +141,7 @@ def compute_binary_metrics(
     auroc = _compute_auroc(y_true, y_pred)
 
     # Brier score
-    brier = sum((t - p) ** 2 for t, p in zip(y_true, y_pred)) / n
+    brier = sum((t - p) ** 2 for t, p in zip(y_true, y_pred, strict=False)) / n
 
     # ECE (expected calibration error, 5 bins)
     ece = _compute_ece(y_true, y_pred, n_bins=5)
@@ -162,7 +163,7 @@ def compute_binary_metrics(
 
 def _compute_auroc(y_true: list[float], y_pred: list[float]) -> float:
     """Compute AUROC by trapezoidal rule (no scipy dependency)."""
-    pairs = sorted(zip(y_pred, y_true), key=lambda x: x[0], reverse=True)
+    pairs = sorted(zip(y_pred, y_true, strict=False), key=lambda x: x[0], reverse=True)
     n_pos = sum(1 for _, t in pairs if t >= 0.5)
     n_neg = len(pairs) - n_pos
     if n_pos == 0 or n_neg == 0:
@@ -170,11 +171,9 @@ def _compute_auroc(y_true: list[float], y_pred: list[float]) -> float:
 
     tp_rate = 0.0
     fp_rate = 0.0
-    prev_fpr = 0.0
-    prev_tpr = 0.0
     area = 0.0
 
-    for i, (_, label) in enumerate(pairs):
+    for _, (_, label) in enumerate(pairs):
         if label >= 0.5:
             tp_rate += 1.0 / n_pos
         else:
@@ -197,8 +196,7 @@ def _compute_ece(y_true: list[float], y_pred: list[float], n_bins: int = 5) -> f
         lower = b * bin_size
         upper = (b + 1) * bin_size
         bin_indices = [
-            i for i, p in enumerate(y_pred)
-            if lower <= p < upper or (b == n_bins - 1 and p == upper)
+            i for i, p in enumerate(y_pred) if lower <= p < upper or (b == n_bins - 1 and p == upper)
         ]
         if not bin_indices:
             continue

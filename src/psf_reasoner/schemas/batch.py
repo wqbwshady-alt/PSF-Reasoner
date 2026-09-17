@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 from pydantic import Field
 
-from psf_reasoner.schemas.common import Direction, ScientificModel
+from psf_reasoner.schemas.common import ScientificModel
 from psf_reasoner.schemas.inputs import (
     AnalysisRequest,
     LigandSpec,

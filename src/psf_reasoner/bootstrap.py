@@ -14,8 +14,8 @@ from functools import partial
 
 from psf_reasoner.application.runner import AnalysisRunner
 from psf_reasoner.application.service import AnalysisService
-from psf_reasoner.infrastructure.cloud_compute import HttpCloudAdapter
 from psf_reasoner.component_status import ComponentStatus, component_registry
+from psf_reasoner.infrastructure.cloud_compute import HttpCloudAdapter
 from psf_reasoner.infrastructure.execution import InlineExecutionBackend
 from psf_reasoner.infrastructure.repository import InMemoryReportRepository
 from psf_reasoner.infrastructure.sqlite_repository import SqliteReportRepository

@@ -162,9 +162,7 @@ _SAMPLE_EVIDENCE = {
 }
 
 
-def test_http_cloud_adapter_sends_api_key(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_http_cloud_adapter_sends_api_key(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """The local adapter must authenticate with PSF_CLOUD_SECRET automatically."""
     import httpx
 

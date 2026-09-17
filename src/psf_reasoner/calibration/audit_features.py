@@ -49,25 +49,25 @@ class FeatureAudit:
 
     def summary(self) -> str:
         lines = [
-            f"Feature Audit Report",
-            f"====================",
+            "Feature Audit Report",
+            "====================",
             f"Samples: {self.n_samples}  Features: {self.n_features}",
             f"Complete samples: {self.complete_samples}/{self.n_samples}",
-            f"",
+            "",
             f"Label distribution: {self.label_distribution}",
             f"Imbalance ratio: {self.label_imbalance_ratio:.2f}",
-            f"",
+            "",
             f"Constant features: {self.constant_features or 'none'}",
             f"Near-constant: {self.near_constant_features or 'none'}",
-            f"",
-            f"Top feature-label correlations:",
+            "",
+            "Top feature-label correlations:",
         ]
         for name, corr in self.top_correlated[:8]:
             lines.append(f"  {name}: {corr:+.3f}")
-        lines.append(f"")
+        lines.append("")
         lines.append(f"Protein counts: {self.protein_counts}")
         if self.warnings:
-            lines.append(f"")
+            lines.append("")
             lines.append(f"Warnings ({len(self.warnings)}):")
             for w in self.warnings:
                 lines.append(f"  ⚠ {w}")
@@ -89,7 +89,9 @@ def audit_features(matrix) -> FeatureAudit:
         return audit
 
     # Label distribution
-    for label, group in zip(labels, split_groups):
+    # labels/split_groups are parallel columns of the same FeatureMatrix,
+    # appended together per case — same length by construction.
+    for label, group in zip(labels, split_groups, strict=True):
         direction = "decrease" if label >= 0.9 else ("increase" if label <= 0.1 else "neutral")
         audit.label_distribution[direction] = audit.label_distribution.get(direction, 0) + 1
         if group not in audit.protein_label_distribution:
@@ -164,14 +166,15 @@ def _is_missing_contextually(name: str, sample: FeatureVector) -> bool:
     """Check if a zero value is genuinely missing (not just zero)."""
     # Structural features that should be non-zero for a real mutation
     structural_indicators = {
-        "contact_count_delta", "atoms_lost", "atoms_gained",
-        "nearest_ligand_distance", "neighborhood_4a_count",
+        "contact_count_delta",
+        "atoms_lost",
+        "atoms_gained",
+        "nearest_ligand_distance",
+        "neighborhood_4a_count",
     }
     if name in structural_indicators and sample.f_nearest_ligand_distance == 0.0:
         return True  # no structure data available
-    if name == "nearest_ligand_distance" and sample.f_nearest_ligand_distance == 0.0:
-        return True
-    return False
+    return name == "nearest_ligand_distance" and sample.f_nearest_ligand_distance == 0.0
 
 
 def _pearson_correlation(x: list[float], y: list[float]) -> float:

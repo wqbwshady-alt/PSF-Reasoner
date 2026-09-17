@@ -7,9 +7,8 @@ Goal: verify the data→features→model→evaluate loop, not achieve high accur
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from math import exp, log, sqrt
+from math import exp, sqrt
 
-from psf_reasoner.calibration.build_feature_matrix import FeatureMatrix
 from psf_reasoner.calibration.feature_schema import FeatureVector
 
 
@@ -68,7 +67,9 @@ def logistic_regression_predict(fv: FeatureVector, coefficients: dict[str, float
     arr = fv.to_array()
     names = FeatureVector.feature_names()
     logit = intercept
-    for name, value in zip(names, arr):
+    # names/to_array() are the two parallel definitions of FeatureVector
+    # (equal length by construction) — strict guards against drift.
+    for name, value in zip(names, arr, strict=True):
         coef = coefficients.get(name, 0.0)
         logit += coef * value
     # Sigmoid
@@ -89,7 +90,6 @@ def train_logistic_regression(
     Pure Python — no external ML dependency required for the pilot.
     """
     names = FeatureVector.feature_names()
-    n_features = len(names)
 
     # Initialize coefficients
     coefs = {name: 0.0 for name in names}
@@ -99,12 +99,14 @@ def train_logistic_regression(
     if n == 0:
         return coefs, intercept
 
-    for iteration in range(n_iterations):
+    for _ in range(n_iterations):
         # Compute gradients
         grad_coefs = {name: 0.0 for name in names}
         grad_intercept = 0.0
 
-        for sample, label in zip(train_samples, train_labels):
+        # train_samples/train_labels are independent caller-supplied lists
+        # (no length contract): strict=False keeps historical behaviour.
+        for sample, label in zip(train_samples, train_labels, strict=False):
             arr = sample.to_array()
             pred = logistic_regression_predict(sample, coefs, intercept)
             error = pred - label
@@ -141,10 +143,12 @@ def evaluate_predictions(
     y_true_bin = [1.0 if t >= 0.5 else 0.0 for t in y_true]
 
     # Confusion matrix
-    tp = sum(1 for t, p in zip(y_true_bin, y_bin) if t >= 0.5 and p >= 0.5)
-    tn = sum(1 for t, p in zip(y_true_bin, y_bin) if t < 0.5 and p < 0.5)
-    fp = sum(1 for t, p in zip(y_true_bin, y_bin) if t < 0.5 and p >= 0.5)
-    fn = sum(1 for t, p in zip(y_true_bin, y_bin) if t >= 0.5 and p < 0.5)
+    # y_true_bin/y_bin mirror the two independent caller-supplied lists
+    # (no length contract): strict=False keeps historical behaviour.
+    tp = sum(1 for t, p in zip(y_true_bin, y_bin, strict=False) if t >= 0.5 and p >= 0.5)
+    tn = sum(1 for t, p in zip(y_true_bin, y_bin, strict=False) if t < 0.5 and p < 0.5)
+    fp = sum(1 for t, p in zip(y_true_bin, y_bin, strict=False) if t < 0.5 and p >= 0.5)
+    fn = sum(1 for t, p in zip(y_true_bin, y_bin, strict=False) if t >= 0.5 and p < 0.5)
 
     accuracy = (tp + tn) / n if n > 0 else 0.0
     tpr = tp / (tp + fn) if (tp + fn) > 0 else 0.0  # recall/sensitivity
@@ -159,12 +163,14 @@ def evaluate_predictions(
     errors = []
     for i in range(n):
         if y_bin[i] != y_true_bin[i]:
-            errors.append({
-                "sample_id": sample_ids[i] if i < len(sample_ids) else f"sample_{i}",
-                "true": "decrease" if y_true[i] >= 0.5 else "increase",
-                "predicted": y_pred[i],
-                "predicted_label": "decrease" if y_pred[i] >= 0.5 else "increase",
-            })
+            errors.append(
+                {
+                    "sample_id": sample_ids[i] if i < len(sample_ids) else f"sample_{i}",
+                    "true": "decrease" if y_true[i] >= 0.5 else "increase",
+                    "predicted": y_pred[i],
+                    "predicted_label": "decrease" if y_pred[i] >= 0.5 else "increase",
+                }
+            )
 
     return PilotResult(
         accuracy=round(accuracy, 3),

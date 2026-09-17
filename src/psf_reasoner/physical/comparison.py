@@ -6,7 +6,10 @@ from dataclasses import dataclass
 
 from psf_reasoner.identifiers import make_id
 from psf_reasoner.physical.geometry import nearest_heavy_atom_pair
-from psf_reasoner.physical.interactions import InteractionCounts, count_typed_interactions, analyze_typed_interactions
+from psf_reasoner.physical.interactions import (
+    InteractionCounts,
+    analyze_typed_interactions,
+)
 from psf_reasoner.physical.metrics import ligand_shell_bounding_box_volume, residue_sasa
 from psf_reasoner.physical.structure import (
     ParsedStructure,
@@ -186,6 +189,7 @@ class ComparativeEvidenceProvider:
                 for item in getattr(analysis, "interactions", ())
                 if item.interaction_type == interaction_type
             )
+
         return (
             self._delta_evidence(
                 request,

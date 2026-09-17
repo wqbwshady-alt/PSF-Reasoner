@@ -225,9 +225,7 @@ class TestStructureInputBoundary:
         response = client.post("/analyze", json=payload)
         assert response.status_code == 200, response.text
 
-    def test_structure_endpoint_rejects_symlink_escape(
-        self, structure_file: Path, tmp_path: Path
-    ) -> None:
+    def test_structure_endpoint_rejects_symlink_escape(self, structure_file: Path, tmp_path: Path) -> None:
         upload_dir = tmp_path / ".psf_uploads"
         upload_dir.mkdir()
         (upload_dir / "link.pdb").symlink_to(structure_file)
@@ -244,9 +242,7 @@ class TestUploadMaintenance:
         resp = client.post("/admin/maintain-uploads")
         assert resp.status_code == 404
 
-    def test_startup_cleanup_removes_expired_uploads(
-        self, structure_file: Path, tmp_path: Path
-    ) -> None:
+    def test_startup_cleanup_removes_expired_uploads(self, structure_file: Path, tmp_path: Path) -> None:
         import os
         import time
 

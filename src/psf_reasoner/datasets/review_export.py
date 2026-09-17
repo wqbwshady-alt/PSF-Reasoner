@@ -24,11 +24,33 @@ def export_review_csv(samples: list[MutationLigandPair]) -> str:
 
     output = io.StringIO()
     fieldnames = [
-        "sample_id", "protein", "accession", "mutation", "wt_residue", "mutant_residue",
-        "uniprot_pos", "pdb_pos", "chain", "ligand", "ligand_name",
-        "assay", "wt_value", "mutant_value", "unit", "ddG", "effect",
-        "wt_pdb", "mutant_pdb", "bg_mutations", "method",
-        "pmid", "doi", "source", "quality", "review", "review_notes",
+        "sample_id",
+        "protein",
+        "accession",
+        "mutation",
+        "wt_residue",
+        "mutant_residue",
+        "uniprot_pos",
+        "pdb_pos",
+        "chain",
+        "ligand",
+        "ligand_name",
+        "assay",
+        "wt_value",
+        "mutant_value",
+        "unit",
+        "ddG",
+        "effect",
+        "wt_pdb",
+        "mutant_pdb",
+        "bg_mutations",
+        "method",
+        "pmid",
+        "doi",
+        "source",
+        "quality",
+        "review",
+        "review_notes",
     ]
     writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
     writer.writeheader()

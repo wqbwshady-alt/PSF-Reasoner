@@ -49,7 +49,9 @@ class PSFReport(ScientificModel):
     confidence: Confidence
     calibration_status: CalibrationStatus = CalibrationStatus.HEURISTIC
     overall_agreement_score: float | None = Field(
-        default=None, ge=0.0, le=1.0,
+        default=None,
+        ge=0.0,
+        le=1.0,
         description="V2 Pathway Agreement Score — replaces confidence for report-level summary.",
     )
     limitations: tuple[str, ...] = ()
