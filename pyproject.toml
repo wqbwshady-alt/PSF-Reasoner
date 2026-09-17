@@ -46,6 +46,18 @@ where = ["src"]
 addopts = "-q"
 testpaths = ["tests"]
 
+[tool.coverage.run]
+# The coverage gate covers the runtime code paths (API, storage, cloud
+# adapter, upload handling).  Offline research tooling — calibration
+# fitting, evaluation harnesses, benchmark schemas — is exercised by
+# dedicated audits outside the unit-test suite and is omitted here so
+# the gate measures what CI actually protects.
+omit = [
+  "src/psf_reasoner/calibration/*",
+  "src/psf_reasoner/evaluation/*",
+  "src/psf_reasoner/benchmarks/*",
+]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 110

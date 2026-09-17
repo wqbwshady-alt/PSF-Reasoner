@@ -31,4 +31,17 @@ jobs:
         with:
           context: ./cloud
           push: false
+          load: true
           tags: psf-cloud-compute:ci
+
+      - name: Run container and check /health
+        run: |
+          docker run -d --name psf-cloud-test -p 8080:8080 psf-cloud-compute:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/health > /tmp/health.json; then break; fi
+            sleep 2
+          done
+          cat /tmp/health.json
+          python3 -c "import json; d=json.load(open('/tmp/health.json')); assert d['status']=='ok', d"
+          docker logs psf-cloud-test | tail -20
+          docker rm -f psf-cloud-test
