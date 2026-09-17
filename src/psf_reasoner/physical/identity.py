@@ -20,7 +20,9 @@ logger = logging.getLogger(__name__)
 # keys in knowledge/literature_evidence.py.
 _FAMILY_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("HIV-1_PROTEASE", ("hiv", "retroviral protease", "human immunodeficiency")),
-    ("DHFR", ("dihydrofolate reductase", "dhfr")),
+    # The extra "dihydrfolate" variant covers deposited titles with the
+    # historical missing-O typo (e.g. PDB 1U72).
+    ("DHFR", ("dihydrofolate reductase", "dihydrfolate", "dhfr")),
     ("EGFR", ("epidermal growth factor receptor", "egfr", "erbb1")),
     ("ABL1", ("tyrosine-protein kinase abl", "abl1", "bcr-abl", "c-abl")),
     ("BLAC", ("beta-lactamase", "tem-1", "tem1")),

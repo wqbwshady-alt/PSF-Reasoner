@@ -8,6 +8,7 @@ pocket / ligand RMSD for paired WT/mutant structures.
 from __future__ import annotations
 
 import logging
+import math
 
 import gemmi
 
@@ -383,15 +384,37 @@ def _paired_ca_atoms(reference: ParsedStructure, mutant: ParsedStructure):
 def _rmsd(atoms_a, atoms_b) -> float:
     if len(atoms_a) != len(atoms_b):
         raise ValueError("atom lists must have equal length")
-    n = len(atoms_a)
-    if n == 0:
+    if not atoms_a:
         return 0.0
-    ssq = sum(
-        (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2 for a, b in zip(atoms_a, atoms_b, strict=True)
-    )
-    import math
+    # Superpose before measuring: raw coordinate RMSD would punish
+    # equivalent structures deposited in different crystal frames
+    # (e.g. 1SDT/1SDU), turning comparable pairs into 30+ A outliers.
+    pos_a = [gemmi.Position(a.x, a.y, a.z) for a in atoms_a]
+    pos_b = [gemmi.Position(b.x, b.y, b.z) for b in atoms_b]
+    result = gemmi.superpose_positions(pos_a, pos_b)
+    rmsd = float(result.rmsd)
+    if math.isnan(rmsd):
+        # Degenerate point set (e.g. collinear atoms): the quaternion fit
+        # cannot determine a rotation.  Align centroids only.
+        ca = _mean_position(pos_a)
+        cb = _mean_position(pos_b)
+        ssq = sum(
+            (a.x - ca.x - (b.x - cb.x)) ** 2
+            + (a.y - ca.y - (b.y - cb.y)) ** 2
+            + (a.z - ca.z - (b.z - cb.z)) ** 2
+            for a, b in zip(pos_a, pos_b, strict=True)
+        )
+        return math.sqrt(ssq / len(pos_a))
+    return rmsd
 
-    return math.sqrt(ssq / n)
+
+def _mean_position(positions) -> gemmi.Position:
+    n = len(positions)
+    return gemmi.Position(
+        sum(p.x for p in positions) / n,
+        sum(p.y for p in positions) / n,
+        sum(p.z for p in positions) / n,
+    )
 
 
 def _ligand_mapping_summary(
