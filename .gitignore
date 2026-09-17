@@ -12,3 +12,4 @@ build/
 *.egg-info/
 cloud/fpocket-src/
 .venv-verify/
+.psf_reasoner/
