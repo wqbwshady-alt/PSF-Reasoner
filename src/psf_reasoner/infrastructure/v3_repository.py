@@ -3,8 +3,8 @@
 Stores the combined V3 payload (V2 report + structural context + causal
 graph + literature) in the SAME SQLite database file used by
 SqliteReportRepository (``.psf_reasoner/reports.db``) so both kinds of
-report share one storage system.  Schema changes go through a versioned
-migration table (``schema_meta``) rather than ad-hoc ALTERs.
+report share one storage system.  Schema changes go through the shared
+versioned migration registry (``sqlite_migrations``).
 
 The schema is initialised lazily on first use so that constructing the
 repository (and importing the API module) has no filesystem side
@@ -20,20 +20,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from threading import RLock
 
-_DEFAULT_DB_PATH = ".psf_reasoner/reports.db"
-SCHEMA_VERSION = 1
+from psf_reasoner.infrastructure.sqlite_migrations import ensure_schema
 
-_MIGRATIONS: tuple[tuple[str, ...], ...] = (
-    # version 1
-    (
-        "CREATE TABLE IF NOT EXISTS v3_reports ("
-        "  report_id    TEXT PRIMARY KEY,"
-        "  generated_at TEXT NOT NULL,"
-        "  payload      TEXT NOT NULL"
-        ")",
-        "CREATE INDEX IF NOT EXISTS idx_v3_reports_generated_at ON v3_reports(generated_at DESC)",
-    ),
-)
+_DEFAULT_DB_PATH = ".psf_reasoner/reports.db"
+# The migration version this repository requires; the shared registry
+# may define later versions for other components.
+SCHEMA_VERSION = 1
 
 
 class V3ReportNotFoundError(LookupError):
@@ -129,16 +121,7 @@ class V3ReportRepository:
             return
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connection() as conn:
-            conn.execute("CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
-            row = conn.execute("SELECT value FROM schema_meta WHERE key = 'schema_version'").fetchone()
-            version = int(row[0]) if row else 0
-            for target in range(version + 1, SCHEMA_VERSION + 1):
-                for statement in _MIGRATIONS[target - 1]:
-                    conn.execute(statement)
-                conn.execute(
-                    "INSERT OR REPLACE INTO schema_meta(key, value) VALUES ('schema_version', ?)",
-                    (str(target),),
-                )
+            ensure_schema(conn, SCHEMA_VERSION)
         self._initialised = True
 
     def _connection(self) -> sqlite3.Connection:

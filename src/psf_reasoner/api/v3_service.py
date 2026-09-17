@@ -5,6 +5,7 @@ The combined payload is persisted in the shared SQLite storage (see
 restarts and work across processes.
 """
 
+from collections.abc import Callable
 from pathlib import Path
 
 from fastapi import HTTPException, status
@@ -16,6 +17,10 @@ from psf_reasoner.infrastructure.v3_repository import V3ReportRepository
 from psf_reasoner.physical.identity import extract_protein_identity
 from psf_reasoner.schemas.inputs import AnalysisRequest
 from psf_reasoner.schemas.report import PSFReport
+
+# Progress callback: (stage, fraction) — used by the background task
+# executor to record fine-grained progress.
+ProgressCallback = Callable[[str, float], None]
 
 DEFAULT_V3_MAX_AGE_DAYS = 30
 
@@ -37,6 +42,7 @@ def build_v3_payload(
     request: AnalysisRequest,
     upload_dir: Path,
     v3_store: V3ReportRepository,
+    progress: ProgressCallback | None = None,
 ) -> dict:
     """Run the full V3 analysis and store the combined payload for export.
 
@@ -56,7 +62,11 @@ def build_v3_payload(
             detail="v3/analyze requires a mutation (notation like V82A)",
         )
     resolved = resolve_request(request, upload_dir)
+    if progress is not None:
+        progress("v2_analysis", 0.4)
     v2_report = run_analysis(runner, resolved)
+    if progress is not None:
+        progress("v3_orchestration", 0.7)
 
     identity = extract_protein_identity(resolved.structure.path)
     family = identity.family_hint
@@ -117,6 +127,8 @@ def build_v3_payload(
         },
     }
     v3_store.save(payload)
+    if progress is not None:
+        progress("export_ready", 1.0)
     return payload
 
 
