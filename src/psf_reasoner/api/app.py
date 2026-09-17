@@ -16,12 +16,14 @@ from fastapi.staticfiles import StaticFiles
 
 from psf_reasoner.api.exports import report_to_csv, report_to_json, report_to_pymol
 from psf_reasoner.api.input_service import EXAMPLES_DIR, resolve_request
+from psf_reasoner.api.task_service import TaskService
 from psf_reasoner.api.upload_service import store_upload
 from psf_reasoner.api.v3_service import build_v3_payload, run_analysis, v3_max_age_seconds
 from psf_reasoner.application.ports import ReportLookupError
 from psf_reasoner.application.runner import AnalysisRunnerProtocol
 from psf_reasoner.bootstrap import create_default_runner
 from psf_reasoner.component_status import component_registry
+from psf_reasoner.infrastructure.task_repository import TaskRepository
 from psf_reasoner.infrastructure.uploads import maintain_uploads, resolve_upload
 from psf_reasoner.infrastructure.v3_repository import V3ReportNotFoundError, V3ReportRepository
 from psf_reasoner.schemas.inputs import (
@@ -41,21 +43,38 @@ def create_app(
     runner: AnalysisRunnerProtocol | None = None,
     upload_dir: Path | None = None,
     v3_store: V3ReportRepository | None = None,
+    task_store: TaskRepository | None = None,
 ) -> FastAPI:
     # The workbench persists reports by default so exports survive
     # restarts; PSF_PERSIST=0 restores in-memory behaviour.
     active_runner = runner or create_default_runner(persist=os.environ.get("PSF_PERSIST", "1") != "0")
     _upload_dir = upload_dir or UPLOAD_DIR
     _v3_store = v3_store or V3ReportRepository()
+    _task_store = task_store or TaskRepository()
+    _task_service = TaskService(
+        _task_store,
+        active_runner,
+        _upload_dir,
+        _v3_store,
+        max_queue=int(os.environ.get("PSF_TASK_MAX_QUEUE", "8")),
+        max_workers=int(os.environ.get("PSF_TASK_WORKERS", "2")),
+        timeout_seconds=float(os.environ.get("PSF_TASK_TIMEOUT_SECONDS", "600")),
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         # Directory creation and pruning run at startup, never at import
-        # time.  Both maintenance calls are idempotent.
+        # time.  All maintenance calls are idempotent; stale running
+        # tasks from a previous process are failed here.
         _upload_dir.mkdir(parents=True, exist_ok=True)
         maintain_uploads(_upload_dir)
         _v3_store.prune_old(max_age_seconds=v3_max_age_seconds())
-        yield
+        _task_store.prune_old_finished(max_age_seconds=7 * 86_400)
+        _task_service.start()
+        try:
+            yield
+        finally:
+            _task_service.shutdown()
 
     api = FastAPI(
         title="PSF-Reasoner API",
@@ -229,8 +248,18 @@ def create_app(
 
     @api.post("/v3/analyze", response_model=dict)
     def v3_analyze(request: AnalysisRequest) -> dict:
-        """V3 analysis — V2 report + structural context + causal graph + literature."""
+        """V3 analysis — compatibility synchronous interface.
+
+        Prefer ``POST /v3/analyze/async`` for long-running analyses so
+        request threads are not blocked.
+        """
         return build_v3_payload(active_runner, request, _upload_dir, _v3_store)
+
+    @api.post("/v3/analyze/async", response_model=dict, status_code=status.HTTP_202_ACCEPTED)
+    def v3_analyze_async(request: AnalysisRequest) -> dict:
+        """Submit a V3 analysis to the background queue; poll GET /tasks/{task_id}."""
+        task_id = _task_service.submit(request)
+        return {"task_id": task_id, "status_url": f"/tasks/{task_id}"}
 
     @api.post("/v3/analyze-upload", response_model=dict)
     async def v3_analyze_upload(
@@ -252,6 +281,38 @@ def create_app(
             phenotype=phenotype,
         )
         return build_v3_payload(active_runner, request, _upload_dir, _v3_store)
+
+    @api.post("/v3/analyze-upload/async", response_model=dict, status_code=status.HTTP_202_ACCEPTED)
+    async def v3_analyze_upload_async(
+        reference_file: Annotated[UploadFile, File(description="WT/reference PDB or mmCIF")],
+        ligand: Annotated[str, Form()],
+        mutation: Annotated[str, Form()],
+        mutant_file: Annotated[UploadFile | None, File()] = None,
+        chain: Annotated[str | None, Form()] = None,
+        phenotype: Annotated[str | None, Form()] = None,
+    ) -> dict:
+        """Submit a multipart V3 analysis to the background queue."""
+        request = await _multipart_request(
+            _upload_dir,
+            reference_file=reference_file,
+            ligand=ligand,
+            mutation=mutation,
+            mutant_file=mutant_file,
+            chain=chain,
+            phenotype=phenotype,
+        )
+        task_id = _task_service.submit(request, stage="structure_parse")
+        return {"task_id": task_id, "status_url": f"/tasks/{task_id}"}
+
+    @api.get("/tasks/{task_id}")
+    def get_task(task_id: str) -> dict:
+        """Background task status: queued/running/succeeded/failed + stage."""
+        return _task_service.get_view(task_id)
+
+    @api.get("/tasks")
+    def list_tasks(limit: int = 20) -> dict:
+        """Recent background tasks, newest first."""
+        return {"tasks": _task_service.list_views(limit=limit)}
 
     @api.get("/export/{report_id}")
     def export_report(report_id: str, format: str = "json") -> PlainTextResponse:
