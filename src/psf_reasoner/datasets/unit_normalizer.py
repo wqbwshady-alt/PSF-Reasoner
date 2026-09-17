@@ -19,11 +19,17 @@ def normalize_ki_kd_units(value: float, unit: str) -> tuple[float, str]:
     """
     unit_lower = unit.lower().strip()
     conversions = {
-        "mm": 1000.0, "millimolar": 1000.0,
-        "µm": 1.0, "um": 1.0, "micromolar": 1.0,
-        "nm": 0.001, "nanomolar": 0.001,
-        "pm": 1e-6, "picomolar": 1e-6,
-        "m": 1_000_000.0, "molar": 1_000_000.0,
+        "mm": 1000.0,
+        "millimolar": 1000.0,
+        "µm": 1.0,
+        "um": 1.0,
+        "micromolar": 1.0,
+        "nm": 0.001,
+        "nanomolar": 0.001,
+        "pm": 1e-6,
+        "picomolar": 1e-6,
+        "m": 1_000_000.0,
+        "molar": 1_000_000.0,
     }
     factor = conversions.get(unit_lower, 1.0)
     return round(value * factor, 4), "uM"

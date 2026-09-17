@@ -9,10 +9,15 @@ particular structure, falls back to the heuristic typing in
 
 from __future__ import annotations
 
+import logging
 import tempfile
 from pathlib import Path
 
-import gemmi
+from psf_reasoner.component_status import ComponentStatus, component_registry
+
+logger = logging.getLogger(__name__)
+
+_import_attempted = False
 
 
 class OpenBabelAtomTyper:
@@ -31,11 +36,36 @@ class OpenBabelAtomTyper:
 
     @staticmethod
     def _check_openbabel() -> bool:
+        global _import_attempted
         try:
             from openbabel import openbabel  # noqa: F401
-            return True
-        except ImportError:
-            return False
+
+            available = True
+        except ImportError as exc:
+            available = False
+            if not _import_attempted:
+                logger.debug("OpenBabel atom typing unavailable, using heuristics: %s", exc)
+                component_registry.set(
+                    ComponentStatus(
+                        "openbabel",
+                        enabled=True,
+                        available=False,
+                        implementation="heuristic_typing",
+                        detail="openbabel package not installed",
+                    )
+                )
+                _import_attempted = True
+        if available and not _import_attempted:
+            component_registry.set(
+                ComponentStatus(
+                    "openbabel",
+                    enabled=True,
+                    available=True,
+                    implementation="openbabel",
+                )
+            )
+            _import_attempted = True
+        return available
 
     @property
     def available(self) -> bool:
@@ -64,7 +94,8 @@ class OpenBabelAtomTyper:
             output = Path(tempfile.mktemp(suffix=".pdb"))
             conv.WriteFile(mol, str(output))
             return output
-        except Exception:
+        except Exception as exc:
+            logger.debug("OpenBabel add_hydrogens failed, returning input PDB: %s", exc)
             return pdb_path
 
     def perceive_aromaticity(self, pdb_path: Path) -> dict[str, bool]:
@@ -87,18 +118,14 @@ class OpenBabelAtomTyper:
             result: dict[str, bool] = {}
             for atom in ob.OBMolAtomIter(mol):
                 residue = atom.GetResidue()
-                label = (
-                    f"{residue.GetChain()}:{residue.GetName()}:"
-                    f"{residue.GetNum()}:{atom.GetName()}"
-                )
+                label = f"{residue.GetChain()}:{residue.GetName()}:{residue.GetNum()}:{atom.GetName()}"
                 result[label] = atom.IsAromatic()
             return result
-        except Exception:
+        except Exception as exc:
+            logger.debug("OpenBabel aromaticity perception failed, using heuristic fallback: %s", exc)
             return {}
 
-    def get_donors_acceptors(
-        self, pdb_path: Path
-    ) -> tuple[set[str], set[str]]:
+    def get_donors_acceptors(self, pdb_path: Path) -> tuple[set[str], set[str]]:
         """Return (donor_atom_labels, acceptor_atom_labels) from OpenBabel.
 
         Uses OpenBabel's built-in H-bond donor/acceptor SMARTS patterns.
@@ -122,15 +149,13 @@ class OpenBabelAtomTyper:
 
             for atom in ob.OBMolAtomIter(mol):
                 residue = atom.GetResidue()
-                label = (
-                    f"{residue.GetChain()}:{residue.GetName()}:"
-                    f"{residue.GetNum()}:{atom.GetName()}"
-                )
+                label = f"{residue.GetChain()}:{residue.GetName()}:{residue.GetNum()}:{atom.GetName()}"
                 if atom.IsHbondDonor():
                     donors.add(label)
                 if atom.IsHbondAcceptor():
                     acceptors.add(label)
 
             return donors, acceptors
-        except Exception:
+        except Exception as exc:
+            logger.debug("OpenBabel donor/acceptor detection failed, using heuristic fallback: %s", exc)
             return set(), set()

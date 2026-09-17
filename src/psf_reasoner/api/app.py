@@ -1,19 +1,29 @@
-"""FastAPI delivery adapter and local analysis workbench."""
+"""FastAPI delivery adapter and local analysis workbench.
 
+Route definitions live here; structure-input resolution, upload
+handling, and V3 orchestration live in ``input_service``,
+``upload_service``, and ``v3_service`` respectively.
+"""
+
+import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
-from uuid import uuid4
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from psf_reasoner.api.exports import report_to_csv, report_to_json, report_to_pymol
-from psf_reasoner.application.ports import ReportLookupError, StructureInputError
+from psf_reasoner.api.input_service import EXAMPLES_DIR, resolve_request
+from psf_reasoner.api.upload_service import store_upload
+from psf_reasoner.api.v3_service import build_v3_payload, run_analysis, v3_max_age_seconds
+from psf_reasoner.application.ports import ReportLookupError
 from psf_reasoner.application.runner import AnalysisRunnerProtocol
 from psf_reasoner.bootstrap import create_default_runner
+from psf_reasoner.component_status import component_registry
 from psf_reasoner.infrastructure.uploads import maintain_uploads, resolve_upload
-from psf_reasoner.physical.identity import extract_protein_identity
+from psf_reasoner.infrastructure.v3_repository import V3ReportNotFoundError, V3ReportRepository
 from psf_reasoner.schemas.inputs import (
     AnalysisRequest,
     LigandSpec,
@@ -25,105 +35,44 @@ from psf_reasoner.schemas.report import PSFReport
 
 STATIC_DIR = Path(__file__).parent / "static"
 UPLOAD_DIR = Path.cwd() / ".psf_uploads"
-EXAMPLES_DIR = Path(__file__).parents[3] / "examples" / "data"
-MAX_UPLOAD_BYTES = 25 * 1024 * 1024
-SUPPORTED_STRUCTURE_SUFFIXES = frozenset({".cif", ".mmcif", ".pdb"})
-
-# Combined V3 analysis payloads, keyed by report_id.  Same lifecycle as the
-# in-memory report repository (process-local workbench storage).
-_V3_RESULTS: dict[str, dict] = {}
-
-
-def _resolve_structure_input(si: StructureInput, upload_dir: Path) -> StructureInput:
-    """Validate and resolve a ``StructureInput`` for API use.
-
-    API endpoints must NOT accept raw filesystem paths.  Callers must either
-    upload a file (multipart) and reference it by ``upload_id``, or use the
-    upload-ID returned by a prior upload.
-
-    Returns a new ``StructureInput`` whose ``path`` is resolved from the
-    upload store.  Raises ``HTTPException`` (400) if a raw filesystem path
-    is provided without an upload ID.
-    """
-    if si.upload_id:
-        try:
-            resolved = resolve_upload(si.upload_id, upload_dir)
-        except FileNotFoundError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"upload_id not found: {si.upload_id}",
-            ) from exc
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(exc),
-            ) from exc
-        return StructureInput(
-            path=str(resolved),
-            upload_id=si.upload_id,
-            format=si.format,
-            model_index=si.model_index,
-        )
-
-    # No upload_id — path must be set (enforced by schema validator).
-    # Accept paths inside the upload store or any local file that exists
-    # (the API is a local workbench, not a public service).
-    if si.path is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="structure must provide either upload_id or path",
-        )
-    resolved = Path(si.path).resolve()
-    upload_root = upload_dir.resolve()
-    if str(resolved).startswith(str(upload_root) + "/") or resolved == upload_root:
-        return si
-    # Accept any local file that exists (for CLI/example parity)
-    if resolved.is_file():
-        return si
-
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail=(
-            "Structure file not found. "
-            "Upload the file via multipart form first, then "
-            "reference it by upload_id, or provide a valid local path."
-        ),
-    )
-
-
-def _resolve_request(
-    request: AnalysisRequest,
-    upload_dir: Path,
-) -> AnalysisRequest:
-    """Resolve all ``StructureInput`` fields in *request* through the upload store."""
-    return AnalysisRequest(
-        structure=_resolve_structure_input(request.structure, upload_dir),
-        mutant_structure=_resolve_structure_input(request.mutant_structure, upload_dir)
-        if request.mutant_structure
-        else None,
-        ligand=request.ligand,
-        mutation=request.mutation,
-        phenotype=request.phenotype,
-        study_context=request.study_context,
-    )
 
 
 def create_app(
     runner: AnalysisRunnerProtocol | None = None,
     upload_dir: Path | None = None,
+    v3_store: V3ReportRepository | None = None,
 ) -> FastAPI:
-    active_runner = runner or create_default_runner()
+    # The workbench persists reports by default so exports survive
+    # restarts; PSF_PERSIST=0 restores in-memory behaviour.
+    active_runner = runner or create_default_runner(persist=os.environ.get("PSF_PERSIST", "1") != "0")
     _upload_dir = upload_dir or UPLOAD_DIR
-    _upload_dir.mkdir(parents=True, exist_ok=True)
+    _v3_store = v3_store or V3ReportRepository()
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        # Directory creation and pruning run at startup, never at import
+        # time.  Both maintenance calls are idempotent.
+        _upload_dir.mkdir(parents=True, exist_ok=True)
+        maintain_uploads(_upload_dir)
+        _v3_store.prune_old(max_age_seconds=v3_max_age_seconds())
+        yield
+
     api = FastAPI(
         title="PSF-Reasoner API",
         version="0.1.0",
         description="Bidirectional physical-structural-functional reasoning.",
+        lifespan=lifespan,
     )
 
     @api.get("/health")
-    def health() -> dict[str, str]:
-        return {"status": "ok"}
+    def health() -> dict:
+        """Liveness plus optional-component status.
+
+        The components block reports which optional integrations (LLM,
+        cloud compute, FoldX, …) are enabled, available, and which
+        implementation is actually in use.
+        """
+        return {"status": "ok", "components": component_registry.snapshot()}
 
     @api.get("/v3/status")
     def v3_status() -> dict:
@@ -167,7 +116,7 @@ def create_app(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="forward requires mutation and does not accept phenotype",
             )
-        return _run(active_runner, _resolve_request(request, _upload_dir))
+        return run_analysis(active_runner, resolve_request(request, _upload_dir))
 
     @api.post("/reverse", response_model=PSFReport)
     def reverse(request: AnalysisRequest) -> PSFReport:
@@ -176,7 +125,7 @@ def create_app(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="reverse requires phenotype and does not accept mutation",
             )
-        return _run(active_runner, _resolve_request(request, _upload_dir))
+        return run_analysis(active_runner, resolve_request(request, _upload_dir))
 
     @api.post("/analyze", response_model=PSFReport)
     def analyze(request: AnalysisRequest) -> PSFReport:
@@ -185,7 +134,7 @@ def create_app(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail="analyze requires both mutation and phenotype",
             )
-        return _run(active_runner, _resolve_request(request, _upload_dir))
+        return run_analysis(active_runner, resolve_request(request, _upload_dir))
 
     @api.post("/analyze-upload", response_model=PSFReport)
     async def analyze_upload(
@@ -196,22 +145,16 @@ def create_app(
         chain: Annotated[str | None, Form()] = None,
         phenotype: Annotated[str | None, Form()] = None,
     ) -> PSFReport:
-        reference_path = await _store_upload(reference_file, _upload_dir)
-        mutant_path = (
-            await _store_upload(mutant_file, _upload_dir)
-            if mutant_file is not None and mutant_file.filename
-            else None
+        request = await _multipart_request(
+            _upload_dir,
+            reference_file=reference_file,
+            ligand=ligand,
+            mutation=mutation,
+            mutant_file=mutant_file,
+            chain=chain,
+            phenotype=phenotype,
         )
-        request = AnalysisRequest(
-            structure=StructureInput(path=str(reference_path), upload_id=reference_path.name),
-            mutant_structure=StructureInput(path=str(mutant_path), upload_id=mutant_path.name)
-            if mutant_path
-            else None,
-            ligand=LigandSpec(identifier=ligand),
-            mutation=MutationSpec(notation=mutation, chain=chain or None),
-            phenotype=PhenotypeSpec(name=phenotype) if phenotype else None,
-        )
-        return _run(active_runner, request)
+        return run_analysis(active_runner, request)
 
     @api.post("/reverse-upload", response_model=PSFReport)
     async def reverse_upload(
@@ -219,13 +162,13 @@ def create_app(
         ligand: Annotated[str, Form()],
         phenotype: Annotated[str, Form()],
     ) -> PSFReport:
-        reference_path = await _store_upload(reference_file, _upload_dir)
-        request = AnalysisRequest(
-            structure=StructureInput(path=str(reference_path), upload_id=reference_path.name),
-            ligand=LigandSpec(identifier=ligand),
-            phenotype=PhenotypeSpec(name=phenotype),
+        request = await _multipart_request(
+            _upload_dir,
+            reference_file=reference_file,
+            ligand=ligand,
+            phenotype=phenotype,
         )
-        return _run(active_runner, request)
+        return run_analysis(active_runner, request)
 
     @api.get("/reports/{report_id}", response_model=PSFReport)
     def get_report(report_id: str) -> PSFReport:
@@ -287,7 +230,7 @@ def create_app(
     @api.post("/v3/analyze", response_model=dict)
     def v3_analyze(request: AnalysisRequest) -> dict:
         """V3 analysis — V2 report + structural context + causal graph + literature."""
-        return _build_v3_payload(active_runner, request, _upload_dir)
+        return build_v3_payload(active_runner, request, _upload_dir, _v3_store)
 
     @api.post("/v3/analyze-upload", response_model=dict)
     async def v3_analyze_upload(
@@ -299,36 +242,31 @@ def create_app(
         phenotype: Annotated[str | None, Form()] = None,
     ) -> dict:
         """V3 analysis from multipart uploads — the main workbench entry point."""
-        reference_path = await _store_upload(reference_file, _upload_dir)
-        mutant_path = (
-            await _store_upload(mutant_file, _upload_dir)
-            if mutant_file is not None and mutant_file.filename
-            else None
+        request = await _multipart_request(
+            _upload_dir,
+            reference_file=reference_file,
+            ligand=ligand,
+            mutation=mutation,
+            mutant_file=mutant_file,
+            chain=chain,
+            phenotype=phenotype,
         )
-        request = AnalysisRequest(
-            structure=StructureInput(path=str(reference_path), upload_id=reference_path.name),
-            mutant_structure=StructureInput(path=str(mutant_path), upload_id=mutant_path.name)
-            if mutant_path
-            else None,
-            ligand=LigandSpec(identifier=ligand),
-            mutation=MutationSpec(notation=mutation, chain=chain or None),
-            phenotype=PhenotypeSpec(name=phenotype) if phenotype else None,
-        )
-        return _build_v3_payload(active_runner, request, _upload_dir)
+        return build_v3_payload(active_runner, request, _upload_dir, _v3_store)
 
     @api.get("/export/{report_id}")
     def export_report(report_id: str, format: str = "json") -> PlainTextResponse:
         """Export a completed V3 analysis as JSON, CSV, or a PyMOL script."""
-        payload = _V3_RESULTS.get(report_id)
-        if payload is None:
+        try:
+            payload = _v3_store.get(report_id)
+        except V3ReportNotFoundError as error:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=(
-                    "no exportable V3 analysis found for this report_id. "
-                    "Run a V3 analysis first; exports live for the current "
-                    "server session."
+                    "no V3 analysis found for this report_id.  Run a V3 "
+                    "analysis first; reports are stored on disk and survive "
+                    "restarts."
                 ),
-            )
+            ) from error
         if format == "json":
             content = report_to_json(payload)
             media_type = "application/json"
@@ -352,142 +290,42 @@ def create_app(
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
 
-    @api.post("/admin/maintain-uploads")
-    def maintain_uploads_endpoint() -> dict:
-        """Remove expired and excess upload files.  Idempotent."""
-        result = maintain_uploads(_upload_dir)
-        return {"status": "ok", **result}
-
-    # Run upload maintenance once at startup.
-    maintain_uploads(_upload_dir)
+    @api.delete("/v3/reports/{report_id}")
+    def delete_v3_report(report_id: str) -> dict:
+        """Delete a stored V3 analysis.  Idempotent."""
+        deleted = _v3_store.delete(report_id)
+        return {"status": "ok", "deleted": deleted}
 
     api.mount("/client", StaticFiles(directory=STATIC_DIR), name="client")
     return api
 
 
-def _run(runner: AnalysisRunnerProtocol, request: AnalysisRequest) -> PSFReport:
-    try:
-        return runner.run(request)
-    except StructureInputError as error:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail=str(error),
-        ) from error
-
-
-def _build_v3_payload(
-    runner: AnalysisRunnerProtocol,
-    request: AnalysisRequest,
+async def _multipart_request(
     upload_dir: Path,
-) -> dict:
-    """Run the full V3 analysis and store the combined payload for export.
-
-    Protein identity comes from the structure header, not from the ligand
-    abbreviation.  When the identity cannot be determined, literature
-    evidence stays empty rather than falling back to another protein.
-    """
-    from psf_reasoner.context.structural_context_builder import (
-        StructuralContextBuilder,
+    *,
+    reference_file: UploadFile,
+    ligand: str,
+    mutation: str | None = None,
+    mutant_file: UploadFile | None = None,
+    chain: str | None = None,
+    phenotype: str | None = None,
+) -> AnalysisRequest:
+    """Store multipart uploads and build the matching ``AnalysisRequest``."""
+    reference_path = await store_upload(reference_file, upload_dir)
+    mutant_path = (
+        await store_upload(mutant_file, upload_dir)
+        if mutant_file is not None and mutant_file.filename
+        else None
     )
-    from psf_reasoner.knowledge.literature_evidence import get_evidence_summary
-    from psf_reasoner.reasoning.mechanism_generator import MechanismGenerator
-
-    if request.mutation is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="v3/analyze requires a mutation (notation like V82A)",
-        )
-    resolved = _resolve_request(request, upload_dir)
-    v2_report = _run(runner, resolved)
-
-    identity = extract_protein_identity(resolved.structure.path)
-    family = identity.family_hint
-
-    if resolved.mutant_structure is not None:
-        ctx = StructuralContextBuilder().build(
-            resolved,
-            qc_report=v2_report.structure_qc,
-            protein_family_hint=family,
-        )
-        graph = MechanismGenerator().generate(ctx, protein_family=family)
-    else:
-        # No mutant structure: no structural context / causal graph can be
-        # honestly computed.  Say so instead of fabricating changes.
-        ctx = None
-        graph = None
-
-    lit_summary = (
-        get_evidence_summary(family, resolved.mutation.notation)
-        if family
-        else {
-            "protein_family": "",
-            "total_entries": 0,
-            "by_grade": {},
-            "has_direct_evidence": False,
-            "has_quantitative_evidence": False,
-        }
+    return AnalysisRequest(
+        structure=StructureInput(path=str(reference_path), upload_id=reference_path.name),
+        mutant_structure=StructureInput(path=str(mutant_path), upload_id=mutant_path.name)
+        if mutant_path
+        else None,
+        ligand=LigandSpec(identifier=ligand),
+        mutation=MutationSpec(notation=mutation, chain=chain or None) if mutation else None,
+        phenotype=PhenotypeSpec(name=phenotype) if phenotype else None,
     )
-
-    mutation_site = ctx.mutation_site if ctx else {}
-    payload: dict = {
-        "report_id": v2_report.report_id,
-        "v2_report": v2_report.model_dump(),
-        "protein_identity": identity.to_dict(),
-        "v3_context": (
-            {
-                "mutation_site": mutation_site,
-                "structural_differences": ctx.structural_differences,
-                "ligand_decomposition": ctx.ligand_decomposition,
-                "neighborhood_4a": ctx.neighborhood_4a,
-                "neighborhood_6a": ctx.neighborhood_6a,
-                "qc_grade": ctx.qc_grade,
-            }
-            if ctx
-            else {
-                "note": "mutant structure not supplied — structural comparison "
-                "was not computed and no structural changes are claimed."
-            }
-        ),
-        "v3_causal_graph": graph.to_dict() if graph else None,
-        "v3_literature": lit_summary,
-        "evidence_localization": {
-            "mutation_chain": resolved.mutation.chain or "",
-            "mutation_residue_number": resolved.mutation.residue_number,
-            "mutation_label": mutation_site.get("residue_label", ""),
-            "ligand": resolved.ligand.identifier,
-            "neighborhood_4a": [n.get("label", "") for n in ctx.neighborhood_4a] if ctx else [],
-        },
-    }
-    _V3_RESULTS[v2_report.report_id] = payload
-    return payload
-
-
-async def _store_upload(upload: UploadFile, upload_dir: Path) -> Path:
-    suffix = Path(upload.filename or "").suffix.lower()
-    if suffix not in SUPPORTED_STRUCTURE_SUFFIXES:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="structure upload must be a .pdb, .cif, or .mmcif file",
-        )
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    destination = upload_dir / f"{uuid4().hex}{suffix}"
-    size = 0
-    try:
-        with destination.open("wb") as handle:
-            while chunk := await upload.read(1024 * 1024):
-                size += len(chunk)
-                if size > MAX_UPLOAD_BYTES:
-                    raise HTTPException(
-                        status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                        detail="structure upload exceeds the 25 MB local limit",
-                    )
-                handle.write(chunk)
-    except Exception:
-        destination.unlink(missing_ok=True)
-        raise
-    finally:
-        await upload.close()
-    return destination
 
 
 app = create_app()

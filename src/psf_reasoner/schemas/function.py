@@ -24,7 +24,7 @@ class SupportCoverage(ScientificModel):
     missing_evidence: tuple[str, ...] = ()
     coverage_ratio: float = Field(default=0.0, ge=0.0, le=1.0)
     evidence_labels: tuple[str, ...] = ()  # human-readable names for current
-    missing_labels: tuple[str, ...] = ()   # human-readable names for missing
+    missing_labels: tuple[str, ...] = ()  # human-readable names for missing
 
 
 class FunctionalHypothesis(Claim):

@@ -45,7 +45,7 @@ class EvidenceLink:
 
     evidence_id: str
     polarity: EvidencePolarity
-    source: str = ""          # "physical_computation" | "literature" | "structural_context"
+    source: str = ""  # "physical_computation" | "literature" | "structural_context"
     description: str = ""
     grade: EvidenceGrade = EvidenceGrade.GRADE_4_WEAK
 
@@ -85,7 +85,7 @@ class MechanismPath:
     path_id: str
     label: str  # human-readable, e.g. "Steric repacking → reduced affinity"
     nodes: tuple[str, ...]  # ordered node IDs
-    edges: tuple[str, ...]   # ordered edge IDs
+    edges: tuple[str, ...]  # ordered edge IDs
     supporting_evidence_count: int = 0
     conflicting_evidence_count: int = 0
     missing_evidence: list[str] = field(default_factory=list)

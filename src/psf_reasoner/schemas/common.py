@@ -84,8 +84,9 @@ class ScoreBreakdown(ScientificModel):
     supporting_evidence_count: int = Field(default=0, ge=0)
     conflicting_evidence_count: int = Field(default=0, ge=0)
     missing_evidence_count: int = Field(default=0, ge=0)
-    evidence_quality_factor: float = Field(default=1.0, ge=0.0, le=1.0,
-                                           description="QC discount factor, 1.0 = no penalty")
+    evidence_quality_factor: float = Field(
+        default=1.0, ge=0.0, le=1.0, description="QC discount factor, 1.0 = no penalty"
+    )
 
 
 class Claim(ScientificModel):

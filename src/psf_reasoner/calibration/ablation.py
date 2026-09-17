@@ -21,8 +21,8 @@ from psf_reasoner.calibration.train_pilot import (
 class AblationResult:
     """Result of one ablation experiment."""
 
-    model_label: str = ""          # "Model 0: Chemistry only", etc.
-    feature_group: str = ""        # "chemistry", "physical", "structural", "literature"
+    model_label: str = ""  # "Model 0: Chemistry only", etc.
+    feature_group: str = ""  # "chemistry", "physical", "structural", "literature"
     n_features: int = 0
     accuracy: float = 0.0
     mcc: float = 0.0
@@ -31,24 +31,43 @@ class AblationResult:
 
 FEATURE_GROUPS = {
     "Model 0: Mutation chemistry": [
-        "volume_delta", "polarity_added", "polarity_removed",
-        "charge_delta", "aromatic_added",
-        "hbond_donor_gained", "hbond_acceptor_gained",
+        "volume_delta",
+        "polarity_added",
+        "polarity_removed",
+        "charge_delta",
+        "aromatic_added",
+        "hbond_donor_gained",
+        "hbond_acceptor_gained",
     ],
     "Model 1: Chemistry + Physical Evidence": [
-        "volume_delta", "polarity_added", "polarity_removed",
-        "charge_delta", "aromatic_added",
-        "hbond_donor_gained", "hbond_acceptor_gained",
-        "contact_count_delta", "atoms_lost", "atoms_gained",
+        "volume_delta",
+        "polarity_added",
+        "polarity_removed",
+        "charge_delta",
+        "aromatic_added",
+        "hbond_donor_gained",
+        "hbond_acceptor_gained",
+        "contact_count_delta",
+        "atoms_lost",
+        "atoms_gained",
         "nearest_ligand_distance",
     ],
     "Model 2: Chemistry + Physical + Structural Context": [
-        "volume_delta", "polarity_added", "polarity_removed",
-        "charge_delta", "aromatic_added",
-        "hbond_donor_gained", "hbond_acceptor_gained",
-        "contact_count_delta", "atoms_lost", "atoms_gained",
-        "nearest_ligand_distance", "neighborhood_4a_count",
-        "is_catalytic", "is_ligand_contact", "is_pocket_lining",
+        "volume_delta",
+        "polarity_added",
+        "polarity_removed",
+        "charge_delta",
+        "aromatic_added",
+        "hbond_donor_gained",
+        "hbond_acceptor_gained",
+        "contact_count_delta",
+        "atoms_lost",
+        "atoms_gained",
+        "nearest_ligand_distance",
+        "neighborhood_4a_count",
+        "is_catalytic",
+        "is_ligand_contact",
+        "is_pocket_lining",
         "pocket_catalytic_in_4a",
     ],
     "Model 3: All features + Literature": [],  # use all features
@@ -85,21 +104,23 @@ def run_ablation(matrix: FeatureMatrix) -> list[AblationResult]:
                 _predict_with_feature_subset(s, coefs, intercept, feature_indices, all_names)
                 for s in train_samples
             ]
-            result = evaluate_predictions(
-                train_labels, preds, matrix.sample_ids
+            result = evaluate_predictions(train_labels, preds, matrix.sample_ids)
+            results.append(
+                AblationResult(
+                    model_label=model_label,
+                    n_features=len(feature_indices),
+                    accuracy=result.accuracy,
+                    mcc=result.mcc,
+                    feature_names=feature_names,
+                )
             )
-            results.append(AblationResult(
-                model_label=model_label,
-                n_features=len(feature_indices),
-                accuracy=result.accuracy,
-                mcc=result.mcc,
-                feature_names=feature_names,
-            ))
         except Exception:
-            results.append(AblationResult(
-                model_label=model_label,
-                n_features=len(feature_indices),
-            ))
+            results.append(
+                AblationResult(
+                    model_label=model_label,
+                    n_features=len(feature_indices),
+                )
+            )
 
     return results
 

@@ -33,9 +33,9 @@ class PluginProvenance:
     tool_name: str
     tool_version: str
     method: str
-    input_structure: str       # path or identifier
+    input_structure: str  # path or identifier
     parameters: dict = field(default_factory=dict)
-    execution_time: str = ""   # ISO format timestamp
+    execution_time: str = ""  # ISO format timestamp
     compute_environment: str = ""  # "local", "HPC", "cloud"
     output_files: list[str] = field(default_factory=list)
 
@@ -55,10 +55,10 @@ class PluginResult:
     provenance: PluginProvenance
 
     # What was computed
-    result_kind: str          # "ddG_binding", "contact_occupancy", etc.
+    result_kind: str  # "ddG_binding", "contact_occupancy", etc.
     result_value: float
     result_unit: str
-    result_direction: str     # "increased", "decreased", "unchanged"
+    result_direction: str  # "increased", "decreased", "unchanged"
     uncertainty: float | None = None
     reference_value: float | None = None
 
@@ -111,17 +111,14 @@ def list_registered_plugins() -> list[dict]:
 
 
 # Pre-register known tool categories as placeholders
-register_plugin("foldx", PluginToolType.ENERGY_CALCULATION,
-                "FoldX empirical force field for ΔΔG prediction")
-register_plugin("rosetta", PluginToolType.ENERGY_CALCULATION,
-                "Rosetta macromolecular modeling suite")
-register_plugin("mmgbsa", PluginToolType.ENERGY_CALCULATION,
-                "MM/GBSA continuum solvent binding energy")
-register_plugin("fpocket", PluginToolType.POCKET_ANALYSIS,
-                "fpocket pocket detection and characterization")
-register_plugin("gromacs", PluginToolType.MD_ENGINE,
-                "GROMACS molecular dynamics engine")
-register_plugin("amber", PluginToolType.MD_ENGINE,
-                "AMBER molecular dynamics suite")
-register_plugin("user_experiment", PluginToolType.EXPERIMENTAL_DATA,
-                "User-provided experimental measurements (Ki, Kd, IC50, etc.)")
+register_plugin("foldx", PluginToolType.ENERGY_CALCULATION, "FoldX empirical force field for ΔΔG prediction")
+register_plugin("rosetta", PluginToolType.ENERGY_CALCULATION, "Rosetta macromolecular modeling suite")
+register_plugin("mmgbsa", PluginToolType.ENERGY_CALCULATION, "MM/GBSA continuum solvent binding energy")
+register_plugin("fpocket", PluginToolType.POCKET_ANALYSIS, "fpocket pocket detection and characterization")
+register_plugin("gromacs", PluginToolType.MD_ENGINE, "GROMACS molecular dynamics engine")
+register_plugin("amber", PluginToolType.MD_ENGINE, "AMBER molecular dynamics suite")
+register_plugin(
+    "user_experiment",
+    PluginToolType.EXPERIMENTAL_DATA,
+    "User-provided experimental measurements (Ki, Kd, IC50, etc.)",
+)

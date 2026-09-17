@@ -9,20 +9,20 @@ from __future__ import annotations
 from enum import StrEnum
 
 from psf_reasoner.physical.geometry import atom_distance
-from psf_reasoner.physical.structure import ParsedStructure, ResidueRecord
+from psf_reasoner.physical.structure import ResidueRecord
 
 
 class ResidueRole(StrEnum):
     """Functional role of a residue in the structure."""
 
-    LIGAND_CONTACT = "ligand_contact"          # within 4 Å of ligand
-    POCKET_LINING = "pocket_lining"            # within 6 Å of ligand
-    POCKET_SHELL = "pocket_shell"              # within 8 Å of ligand
-    CATALYTIC = "catalytic"                    # known catalytic residue
-    DIMER_INTERFACE = "dimer_interface"         # at protein-protein interface
-    SURFACE = "surface"                        # solvent-exposed, not in pocket
-    BURIED = "buried"                          # low SASA, not in pocket
-    METAL_BINDING = "metal_binding"            # coordinates a metal ion
+    LIGAND_CONTACT = "ligand_contact"  # within 4 Å of ligand
+    POCKET_LINING = "pocket_lining"  # within 6 Å of ligand
+    POCKET_SHELL = "pocket_shell"  # within 8 Å of ligand
+    CATALYTIC = "catalytic"  # known catalytic residue
+    DIMER_INTERFACE = "dimer_interface"  # at protein-protein interface
+    SURFACE = "surface"  # solvent-exposed, not in pocket
+    BURIED = "buried"  # low SASA, not in pocket
+    METAL_BINDING = "metal_binding"  # coordinates a metal ion
     UNKNOWN = "unknown"
 
 
@@ -64,30 +64,27 @@ def classify_residue_role(
 
     # -- Catalytic annotation from curated motifs -------------------------
     for family, catalytic_set in _CATALYTIC_MOTIFS.items():
-        if protein_family_hint.upper() == family or _matches_family(residue_label, family):
-            if _residue_name_matches(residue_label, catalytic_set):
-                roles.add(ResidueRole.CATALYTIC)
+        if (
+            protein_family_hint.upper() == family or _matches_family(residue_label, family)
+        ) and _residue_name_matches(residue_label, catalytic_set):
+            roles.add(ResidueRole.CATALYTIC)
 
     # -- Metal binding ----------------------------------------------------
     for metal in metals:
         metal_atoms = [a for a in metal.atoms if a.element not in {"D", "H"}]
         residue_atoms = [a for a in residue.atoms if a.element not in {"D", "H"}]
-        if any(
-            atom_distance(ra, ma) <= 3.0
-            for ra in residue_atoms
-            for ma in metal_atoms
-        ):
+        if any(atom_distance(ra, ma) <= 3.0 for ra in residue_atoms for ma in metal_atoms):
             roles.add(ResidueRole.METAL_BINDING)
 
     # -- Ligand proximity classification ----------------------------------
     if ligand is not None:
         ligand_atoms = [a for a in ligand.atoms if a.element not in {"D", "H"}]
         residue_atoms = [a for a in residue.atoms if a.element not in {"D", "H"}]
-        min_dist = min(
-            atom_distance(ra, la)
-            for ra in residue_atoms
-            for la in ligand_atoms
-        ) if residue_atoms and ligand_atoms else float("inf")
+        min_dist = (
+            min(atom_distance(ra, la) for ra in residue_atoms for la in ligand_atoms)
+            if residue_atoms and ligand_atoms
+            else float("inf")
+        )
 
         if min_dist <= 4.0:
             roles.add(ResidueRole.LIGAND_CONTACT)
@@ -119,10 +116,7 @@ def annotate_mutation_site(
     """
     roles = classify_residue_role(residue, ligand, metals, **kwargs)
     residue_atoms = [a for a in residue.atoms if a.element not in {"D", "H"}]
-    ligand_atoms = (
-        [a for a in ligand.atoms if a.element not in {"D", "H"}]
-        if ligand else []
-    )
+    ligand_atoms = [a for a in ligand.atoms if a.element not in {"D", "H"}] if ligand else []
 
     # Nearest ligand atom and distance
     nearest_dist = None
@@ -163,7 +157,4 @@ def _matches_family(residue_label: str, family: str) -> bool:
 
 def _residue_name_matches(label: str, candidates: frozenset[str]) -> bool:
     """Check if *label* (e.g. 'A:ASP25') matches any candidate (e.g. 'ASP25')."""
-    for candidate in candidates:
-        if label.endswith(":" + candidate) or label == candidate:
-            return True
-    return False
+    return any(label.endswith(":" + candidate) or label == candidate for candidate in candidates)

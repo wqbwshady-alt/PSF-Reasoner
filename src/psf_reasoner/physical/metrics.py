@@ -20,11 +20,26 @@ VDW_RADII_ANGSTROM = {
 # Reference SASA for each standard residue in an extended Gly-X-Gly tripeptide
 # (values from Miller et al., J. Mol. Biol. 1987, in Å²).
 _REFERENCE_SASA_GLY_X_GLY: dict[str, float] = {
-    "ALA": 113.0, "ARG": 241.0, "ASN": 158.0, "ASP": 151.0,
-    "CYS": 140.0, "GLN": 189.0, "GLU": 183.0, "GLY": 85.0,
-    "HIS": 194.0, "ILE": 182.0, "LEU": 180.0, "LYS": 211.0,
-    "MET": 204.0, "PHE": 218.0, "PRO": 143.0, "SER": 122.0,
-    "THR": 146.0, "TRP": 259.0, "TYR": 229.0, "VAL": 160.0,
+    "ALA": 113.0,
+    "ARG": 241.0,
+    "ASN": 158.0,
+    "ASP": 151.0,
+    "CYS": 140.0,
+    "GLN": 189.0,
+    "GLU": 183.0,
+    "GLY": 85.0,
+    "HIS": 194.0,
+    "ILE": 182.0,
+    "LEU": 180.0,
+    "LYS": 211.0,
+    "MET": 204.0,
+    "PHE": 218.0,
+    "PRO": 143.0,
+    "SER": 122.0,
+    "THR": 146.0,
+    "TRP": 259.0,
+    "TYR": 229.0,
+    "VAL": 160.0,
 }
 
 # Backbone atoms for SASA decomposition
@@ -134,8 +149,7 @@ def residue_sasa(
 
     # Pre-compute target atom positions + radii for spatial filter
     target_info = tuple(
-        (atom.x, atom.y, atom.z, _radius(atom.element) + probe_radius_angstrom)
-        for atom in target_atoms
+        (atom.x, atom.y, atom.z, _radius(atom.element) + probe_radius_angstrom) for atom in target_atoms
     )
 
     # Spatial filter: only keep occluders within ~10 Å of any target atom
@@ -148,8 +162,7 @@ def residue_sasa(
         for atom in _heavy_atoms(other)
         if atom.residue != residue.identity
         and any(
-            (atom.x - tx) ** 2 + (atom.y - ty) ** 2 + (atom.z - tz) ** 2
-            < occlusion_cutoff ** 2
+            (atom.x - tx) ** 2 + (atom.y - ty) ** 2 + (atom.z - tz) ** 2 < occlusion_cutoff**2
             for tx, ty, tz, _ in target_info
         )
     )

@@ -8,9 +8,9 @@ features rather than treating the ligand as an opaque blob.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-from psf_reasoner.physical.structure import AtomRecord, ResidueRecord
+from psf_reasoner.physical.structure import ResidueRecord
 
 
 @dataclass
@@ -56,8 +56,12 @@ _KNOWN_LIGANDS: dict[str, LigandDecomposition] = {
             ChemicalFragment("MK1_core", "ring", (), "Central hydroxyethylene isostere core", aromatic=False),
             ChemicalFragment("MK1_p1", "ring", (), "P1 phenyl ring (S2 pocket)", aromatic=True),
             ChemicalFragment("MK1_p1prime", "ring", (), "P1' phenyl ring (S1' pocket)", aromatic=True),
-            ChemicalFragment("MK1_p2", "ring", (), "P2 t-butyl-carboxamide group (S2 pocket)", aromatic=False),
-            ChemicalFragment("MK1_p2prime", "ring", (), "P2' pyridyl-methyl group (S2' pocket)", aromatic=True),
+            ChemicalFragment(
+                "MK1_p2", "ring", (), "P2 t-butyl-carboxamide group (S2 pocket)", aromatic=False
+            ),
+            ChemicalFragment(
+                "MK1_p2prime", "ring", (), "P2' pyridyl-methyl group (S2' pocket)", aromatic=True
+            ),
         ),
     ),
     "MTX": LigandDecomposition(
@@ -69,12 +73,27 @@ _KNOWN_LIGANDS: dict[str, LigandDecomposition] = {
         hbond_acceptors=8,
         logP_estimate=-0.2,
         fragments=(
-            ChemicalFragment("MTX_pteridine", "ring", (),
-                             "2,4-diaminopteridine ring — binds in DHFR active site", aromatic=True),
-            ChemicalFragment("MTX_paba", "ring", (),
-                             "para-aminobenzoate group — linker between pteridine and glutamate", aromatic=True),
-            ChemicalFragment("MTX_glutamate", "charged_group", (),
-                             "Glutamate tail — charged carboxylates at physiological pH", charge=-2),
+            ChemicalFragment(
+                "MTX_pteridine",
+                "ring",
+                (),
+                "2,4-diaminopteridine ring — binds in DHFR active site",
+                aromatic=True,
+            ),
+            ChemicalFragment(
+                "MTX_paba",
+                "ring",
+                (),
+                "para-aminobenzoate group — linker between pteridine and glutamate",
+                aromatic=True,
+            ),
+            ChemicalFragment(
+                "MTX_glutamate",
+                "charged_group",
+                (),
+                "Glutamate tail — charged carboxylates at physiological pH",
+                charge=-2,
+            ),
         ),
     ),
 }
@@ -110,10 +129,7 @@ def _heuristic_decomposition(ligand: ResidueRecord, identifier: str) -> LigandDe
     """Basic heuristic decomposition for ligands not in the curated table."""
     heavy_atoms = tuple(a for a in ligand.atoms if a.element not in {"D", "H"})
     n_heavy = len(heavy_atoms)
-    n_donors = sum(
-        1 for a in heavy_atoms
-        if a.element == "N" or (a.element == "O" and a.formal_charge == 0)
-    )
+    n_donors = sum(1 for a in heavy_atoms if a.element == "N" or (a.element == "O" and a.formal_charge == 0))
     n_acceptors = sum(1 for a in heavy_atoms if a.element in {"O", "N"})
 
     return LigandDecomposition(
@@ -128,7 +144,8 @@ def _heuristic_decomposition(ligand: ResidueRecord, identifier: str) -> LigandDe
                 f"{identifier}_unknown",
                 "ring",
                 tuple(a.label for a in heavy_atoms),
-                f"Uncurated ligand — {n_heavy} heavy atoms, approximate H-bond donors={n_donors}, acceptors={n_acceptors}",
+                f"Uncurated ligand — {n_heavy} heavy atoms, "
+                f"approximate H-bond donors={n_donors}, acceptors={n_acceptors}",
             ),
         ),
     )

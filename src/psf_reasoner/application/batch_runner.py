@@ -6,7 +6,6 @@ import time
 
 from psf_reasoner.application.runner import AnalysisRunnerProtocol
 from psf_reasoner.schemas.batch import (
-    BatchCase,
     BatchJobResult,
     BatchManifest,
     BatchResult,

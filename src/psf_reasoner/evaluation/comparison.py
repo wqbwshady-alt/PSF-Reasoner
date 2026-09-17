@@ -39,9 +39,7 @@ class ComparisonResult:
     notes: str = ""
 
 
-def extract_reasoner_output(
-    case: BenchmarkCase, report: PSFReport, engine: str
-) -> ReasonerOutput:
+def extract_reasoner_output(case: BenchmarkCase, report: PSFReport, engine: str) -> ReasonerOutput:
     """Extract key outputs from a PSFReport for comparison."""
     mechanisms = report.structural_mechanisms
     return ReasonerOutput(
@@ -69,11 +67,7 @@ def compare_reasoners(
     output is populated.
     """
     baseline = extract_reasoner_output(case, baseline_report, "baseline")
-    llm = (
-        extract_reasoner_output(case, llm_report, "llm")
-        if llm_report is not None
-        else None
-    )
+    llm = extract_reasoner_output(case, llm_report, "llm") if llm_report is not None else None
 
     mechanism_types_match = False
     jaccard = 0.0
@@ -81,9 +75,7 @@ def compare_reasoners(
 
     if baseline and llm:
         # Compare top mechanism types
-        mechanism_types_match = (
-            baseline.top_mechanism_type == llm.top_mechanism_type
-        )
+        mechanism_types_match = baseline.top_mechanism_type == llm.top_mechanism_type
 
         # Jaccard similarity of mechanism titles (simple token overlap)
         if baseline.top_mechanism_title and llm.top_mechanism_title:
@@ -137,16 +129,16 @@ def summarize_comparison(results: list[ComparisonResult]) -> ComparisonSummary:
     return ComparisonSummary(
         n_cases=len(results),
         n_llm_available=len(llm_available),
-        mechanism_type_agreement_rate=(
-            round(type_matches / len(llm_available), 3) if llm_available else 0.0
-        ),
+        mechanism_type_agreement_rate=(round(type_matches / len(llm_available), 3) if llm_available else 0.0),
         mean_jaccard=round(sum(jaccards) / len(jaccards), 3) if jaccards else 0.0,
         baseline_mean_confidence=round(
             sum(r.baseline.confidence for r in results if r.baseline) / len(results), 3
-        ) if results else 0.0,
-        llm_mean_confidence=round(
-            sum(r.llm.confidence for r in llm_available) / len(llm_available), 3
-        ) if llm_available else 0.0,
+        )
+        if results
+        else 0.0,
+        llm_mean_confidence=round(sum(r.llm.confidence for r in llm_available) / len(llm_available), 3)
+        if llm_available
+        else 0.0,
         results=results,
         note=(
             "EXPLORATORY ONLY.  Requires frozen benchmark with mechanism labels "

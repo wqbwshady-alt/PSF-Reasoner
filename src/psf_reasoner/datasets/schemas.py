@@ -33,10 +33,10 @@ class ReviewStatus(StrEnum):
 
 
 class DataQuality(StrEnum):
-    CURATED = "curated"        # manually verified
-    REPORTED = "reported"       # from literature, not re-verified
-    INFERRED = "inferred"       # derived from related data
-    UNVERIFIED = "unverified"   # from automated import
+    CURATED = "curated"  # manually verified
+    REPORTED = "reported"  # from literature, not re-verified
+    INFERRED = "inferred"  # derived from related data
+    UNVERIFIED = "unverified"  # from automated import
 
 
 @dataclass
@@ -60,10 +60,10 @@ class MutationLigandPair:
 
     # -- Identity ----------------------------------------------------------
     sample_id: str = ""
-    protein_accession: str = ""       # UniProt accession
+    protein_accession: str = ""  # UniProt accession
     protein_name: str = ""
     organism: str = ""
-    mutation_notation: str = ""        # e.g. "V82A"
+    mutation_notation: str = ""  # e.g. "V82A"
     wt_residue: str = ""
     mutant_residue: str = ""
     uniprot_position: int | None = None
@@ -71,15 +71,15 @@ class MutationLigandPair:
     pdb_chain: str = ""
 
     # -- Ligand ------------------------------------------------------------
-    ligand_id: str = ""               # 3-letter PDB code
+    ligand_id: str = ""  # 3-letter PDB code
     ligand_name: str = ""
-    ligand_role: str = ""             # "inhibitor", "substrate", "cofactor"
+    ligand_role: str = ""  # "inhibitor", "substrate", "cofactor"
 
     # -- Experimental label ------------------------------------------------
     assay_type: AssayType = AssayType.OTHER
     wt_value: float | None = None
     mutant_value: float | None = None
-    value_unit: str = ""              # "nM", "µM", "kcal/mol", etc.
+    value_unit: str = ""  # "nM", "µM", "kcal/mol", etc.
     temperature_kelvin: float | None = None
     delta_delta_g: float | None = None  # kcal/mol, computed if possible
     effect_direction: EffectDirection = EffectDirection.UNKNOWN
@@ -97,7 +97,7 @@ class MutationLigandPair:
     # -- Provenance --------------------------------------------------------
     pmid: str = ""
     doi: str = ""
-    data_source: str = ""             # "BindingDB", "ProTherm", "manual", etc.
+    data_source: str = ""  # "BindingDB", "ProTherm", "manual", etc.
     data_quality: DataQuality = DataQuality.UNVERIFIED
     review_status: ReviewStatus = ReviewStatus.PENDING
     review_notes: str = ""

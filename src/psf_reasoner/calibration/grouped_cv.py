@@ -9,7 +9,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from psf_reasoner.calibration.build_feature_matrix import FeatureMatrix
-from psf_reasoner.calibration.feature_schema import FeatureVector
 from psf_reasoner.calibration.train_pilot import (
     PilotResult,
     evaluate_predictions,

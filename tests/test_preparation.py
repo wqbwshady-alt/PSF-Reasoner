@@ -41,7 +41,9 @@ def test_preparation_detects_missing_file() -> None:
         mutation=MutationSpec(notation="V82A", chain="A"),
     )
 
-    with pytest.raises(Exception):
+    from psf_reasoner.physical.structure import StructureAnalysisError
+
+    with pytest.raises(StructureAnalysisError):
         StructurePreparationInspector().inspect_request(request)
 
 

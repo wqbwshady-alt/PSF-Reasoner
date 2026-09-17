@@ -10,13 +10,10 @@ approximations carry appropriate limitations.
 from __future__ import annotations
 
 import math
-from collections import Counter
 
 from psf_reasoner.physical.geometry import atom_distance
-from psf_reasoner.physical.metrics import residue_sasa
-from psf_reasoner.physical.structure import AtomRecord, ParsedStructure, ResidueRecord
+from psf_reasoner.physical.structure import ParsedStructure, ResidueRecord
 from psf_reasoner.schemas.common import ScientificModel
-
 
 # ---------------------------------------------------------------------------
 # Dynamic Layer — Distance distribution
@@ -79,9 +76,7 @@ def contact_occupancy(
         return 0.0
     total_pairs = len(residue_heavy) * len(ligand_heavy)
     contact_pairs = sum(
-        atom_distance(ra, la) <= cutoff_angstrom
-        for ra in residue_heavy
-        for la in ligand_heavy
+        atom_distance(ra, la) <= cutoff_angstrom for ra in residue_heavy for la in ligand_heavy
     )
     return round(contact_pairs / total_pairs, 3)
 

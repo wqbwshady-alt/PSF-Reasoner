@@ -51,9 +51,7 @@ class CalibrationAnalysis:
     note: str = ""
 
 
-def compute_mechanism_ranking(
-    case: BenchmarkCase, report: PSFReport
-) -> MechanismRankingMetrics:
+def compute_mechanism_ranking(case: BenchmarkCase, report: PSFReport) -> MechanismRankingMetrics:
     """Evaluate mechanism ranking against a benchmark case's mechanism label.
 
     When ``expected_interaction_changes`` are available on the case, uses
@@ -63,7 +61,8 @@ def compute_mechanism_ranking(
     mechanisms = report.structural_mechanisms
     if not mechanisms:
         return MechanismRankingMetrics(
-            case_id=case.case_id, num_mechanisms=0,
+            case_id=case.case_id,
+            num_mechanisms=0,
         )
 
     top = mechanisms[0]
@@ -170,7 +169,10 @@ def compute_calibration_analysis(
     """
     if not results:
         return CalibrationAnalysis(
-            benchmark_id="empty", n_cases=0, n_held_out=0, bins=[],
+            benchmark_id="empty",
+            n_cases=0,
+            n_held_out=0,
+            bins=[],
             note="No results to analyze.",
         )
 
@@ -189,17 +191,23 @@ def compute_calibration_analysis(
         if bin_pairs:
             mean_conf = sum(c for c, _ in bin_pairs) / len(bin_pairs)
             mean_acc = sum(a for _, a in bin_pairs) / len(bin_pairs)
-            bins.append(CalibrationBin(
-                bin_center=(lo + hi) / 2,
-                n_cases=len(bin_pairs),
-                mean_confidence=round(mean_conf, 3),
-                mean_accuracy=round(mean_acc, 3),
-            ))
+            bins.append(
+                CalibrationBin(
+                    bin_center=(lo + hi) / 2,
+                    n_cases=len(bin_pairs),
+                    mean_confidence=round(mean_conf, 3),
+                    mean_accuracy=round(mean_acc, 3),
+                )
+            )
         else:
-            bins.append(CalibrationBin(
-                bin_center=(lo + hi) / 2, n_cases=0,
-                mean_confidence=0.0, mean_accuracy=0.0,
-            ))
+            bins.append(
+                CalibrationBin(
+                    bin_center=(lo + hi) / 2,
+                    n_cases=0,
+                    mean_confidence=0.0,
+                    mean_accuracy=0.0,
+                )
+            )
 
     # Brier score
     n = len(pairs)

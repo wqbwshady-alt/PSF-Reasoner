@@ -5,6 +5,7 @@ exceptions so that delivery adapters never depend on physical-layer or
 infrastructure-layer error types.
 """
 
+from collections.abc import Callable
 from typing import Protocol
 
 from psf_reasoner.application.ports import (
@@ -17,7 +18,7 @@ from psf_reasoner.application.ports import (
 from psf_reasoner.application.service import AnalysisService
 from psf_reasoner.physical.structure import StructureAnalysisError
 from psf_reasoner.schemas.inputs import AnalysisRequest
-from psf_reasoner.schemas.report import PSFReport
+from psf_reasoner.schemas.report import PSFReport, ReportRuntime
 
 
 class AnalysisRunnerProtocol(Protocol):
@@ -32,16 +33,20 @@ class AnalysisRunner:
         service: AnalysisService,
         execution: ExecutionBackend,
         reports: ReportRepository,
+        runtime_factory: Callable[[], ReportRuntime] | None = None,
     ) -> None:
         self._service = service
         self._execution = execution
         self._reports = reports
+        self._runtime_factory = runtime_factory
 
     def run(self, request: AnalysisRequest) -> PSFReport:
         try:
             report = self._execution.execute(request, self._service.analyze)
         except StructureAnalysisError as error:
             raise StructureInputError(str(error)) from error
+        if self._runtime_factory is not None:
+            report = report.model_copy(update={"runtime": self._runtime_factory()})
         self._reports.save(report)
         return report
 

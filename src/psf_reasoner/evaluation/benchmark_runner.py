@@ -27,13 +27,9 @@ def case_to_request(case: BenchmarkCase) -> AnalysisRequest:
     """Convert a ``BenchmarkCase`` to an ``AnalysisRequest`` for the pipeline."""
     return AnalysisRequest(
         structure=StructureInput(path=case.wt_pdb_id),
-        mutant_structure=StructureInput(path=case.mutant_pdb_id)
-        if case.mutant_pdb_id
-        else None,
+        mutant_structure=StructureInput(path=case.mutant_pdb_id) if case.mutant_pdb_id else None,
         ligand=LigandSpec(identifier=case.ligand_identifier, chain=case.ligand_chain),
-        mutation=MutationSpec(
-            notation=case.mutation_notation, chain=case.mutation_chain
-        ),
+        mutation=MutationSpec(notation=case.mutation_notation, chain=case.mutation_chain),
         phenotype=PhenotypeSpec(name=case.phenotype),
     )
 

@@ -1,181 +1,11 @@
-/* PSF-Reasoner v5 Client — honest, wired end-to-end workbench */
-
-const examplePayload = {
-  structure: { path: "examples/data/1sdt.cif", format: "mmcif", model_index: 0 },
-  mutant_structure: { path: "examples/data/1sdv.cif", format: "mmcif", model_index: 0 },
-  ligand: { identifier: "MK1" },
-  mutation: { notation: "V82A", chain: "A" },
-  phenotype: { name: "drug_resistance", direction: "increase" },
-};
-const reverseExamplePayload = {
-  structure: { path: "examples/data/1sdt.cif", format: "mmcif", model_index: 0 },
-  ligand: { identifier: "MK1" },
-  phenotype: { name: "drug_resistance", direction: "increase" },
-};
-
-let analysisMode = "bidirectional";
-let loadingTimer = null;
-let lastPayload = null; // last combined V3 payload (for localization + export)
-
-const $ = s => document.querySelector(s);
-const $$ = s => document.querySelectorAll(s);
+/* Report rendering — V2 evidence sections plus the V3 context/graph layers. */
 
 // Chinese translation layer (i18n.js); falls back to the original text.
 const zh = (window.PSF_I18N && window.PSF_I18N.zh) || (s => s);
 const zhPath = (window.PSF_I18N && window.PSF_I18N.zhPath) || (s => s);
 
-const els = {
-  form: $("#analysis-form"),
-  status: $("#api-status"),
-  empty: $("#empty-state"),
-  loading: $("#loading-state"),
-  error: $("#error-state"),
-  report: $("#report"),
-  submit: $("#submit-analysis"),
-  viewerPanel: $("#viewer-panel"),
-  viewer3d: $("#viewer-3d"),
-  viewerClose: $("#viewer-close"),
-};
-
-// ---------------------------------------------------------------------------
-// 3D Viewer
-// ---------------------------------------------------------------------------
-let viewer = null;
-let viewerMode = "reference";
-let structureData = { reference: null, mutant: null }; // { pdbText, path, uploadId }
-let highlightState = { chain: "", resi: "", ligand: "", neighbors: [] };
-
-function initViewer() {
-  if (viewer) return;
-  try { viewer = $3Dmol.createViewer("viewer-3d", { backgroundColor: "white", antialias: true }); }
-  catch (e) { showError("3D 查看器初始化失败: " + e.message); }
-}
-
-async function loadPDB(path, uploadId) {
-  const p = new URLSearchParams();
-  if (uploadId) p.set("upload_id", uploadId); else p.set("path", path);
-  const r = await fetch(`/structure?${p.toString()}`);
-  if (!r.ok) throw new Error(`无法加载结构: ${path || uploadId}`);
-  return r.text();
-}
-
-function parseNeighborLabels(labels) {
-  // "A:VAL82" -> {chain:"A", resi:"82"}; ignore entries without a residue number
-  const out = [];
-  for (const label of labels || []) {
-    const m = String(label).match(/^([A-Za-z0-9]):[A-Z]{1,3}(\d+)/);
-    if (m) out.push({ chain: m[1], resi: m[2] });
-  }
-  return out;
-}
-
-function applyHighlights() {
-  if (!viewer) return;
-  const chain = highlightState.chain || undefined;
-  viewer.setStyle({}, { cartoon: { color: "spectrum" } });
-  if (highlightState.resi) {
-    viewer.setStyle({ chain, resi: highlightState.resi },
-      { cartoon: { color: "#ff6b6b" }, stick: { radius: 0.35, color: "#ff6b6b" } });
-  }
-  if (highlightState.ligand) {
-    viewer.setStyle({ resn: highlightState.ligand.toUpperCase() },
-      { stick: { radius: 0.25, color: "#0891b2" } });
-  }
-  for (const nb of highlightState.neighbors) {
-    viewer.setStyle({ chain: nb.chain, resi: nb.resi },
-      { cartoon: { color: "#f59e0b" }, stick: { radius: 0.3, color: "#f59e0b" } });
-  }
-  viewer.render();
-}
-
-async function showStructurePanel() {
-  els.viewerPanel.classList.remove("hidden");
-  initViewer();
-  if (!viewer) return;
-  try {
-    const entry = structureData[viewerMode];
-    if (!entry) throw new Error(viewerMode === "mutant" ? "未提供突变体结构" : "未提供参考结构");
-    if (!entry.pdbText) entry.pdbText = await loadPDB(entry.path, entry.uploadId);
-    viewer.removeAllSurfaces();
-    viewer.removeAllModels();
-    viewer.addModel(entry.pdbText, "pdb");
-    applyHighlights();
-    viewer.zoomTo();
-    viewer.resize();
-  } catch (e) { showError("3D 渲染失败: " + e.message); }
-}
-
-els.viewerClose.addEventListener("click", () => els.viewerPanel.classList.add("hidden"));
-$$(".viewer-tab").forEach(t => t.addEventListener("click", () => {
-  viewerMode = t.dataset.mode;
-  $$(".viewer-tab").forEach(x => x.classList.toggle("active", x === t));
-  showStructurePanel();
-}));
-
-// ---------------------------------------------------------------------------
-// Loading animation
-// ---------------------------------------------------------------------------
-const stages = [
-  { stage: 'parse', status: '📖 解析蛋白结构...', pct: 10 },
-  { stage: 'qc', status: '🔬 结构质量评估中...', pct: 25 },
-  { stage: 'physical', status: '⚛️ 计算物理证据 (SASA·相互作用·口袋几何)...', pct: 45 },
-  { stage: 'reason', status: '🧬 机制推理与因果图生成...', pct: 70 },
-  { stage: 'synthesize', status: '🧪 合成报告与验证计划...', pct: 90 },
-];
-function startLoading() {
-  const bar = document.getElementById('bio-progress-bar');
-  const status = document.getElementById('bio-status');
-  const stageEls = $$('.bio-stage');
-  if (bar) bar.style.width = '0%';
-  if (status) status.textContent = '初始化分析引擎';
-  stageEls.forEach(s => s.classList.remove('active', 'done'));
-  let idx = 0;
-  function adv() {
-    if (idx >= stages.length) return;
-    const s = stages[idx];
-    if (status) status.textContent = s.status;
-    if (bar) bar.style.width = s.pct + '%';
-    stageEls.forEach(el => {
-      if (el.dataset.stage === s.stage) el.classList.add('active');
-      else if (stages.findIndex(a => a.stage === el.dataset.stage) < idx) el.classList.add('done');
-    });
-    idx++;
-    if (idx < stages.length) loadingTimer = setTimeout(adv, 3000 + Math.random() * 3000);
-  }
-  adv();
-}
-function stopLoading() {
-  if (loadingTimer) { clearTimeout(loadingTimer); loadingTimer = null; }
-  const bar = document.getElementById('bio-progress-bar');
-  if (bar) bar.style.width = '100%';
-  const status = document.getElementById('bio-status');
-  if (status) status.textContent = '✅ 分析完成';
-  $$('.bio-stage').forEach(s => s.classList.add('done'));
-}
-function setLoading(on) {
-  els.loading.classList.toggle("hidden", !on);
-  els.empty.classList.add("hidden");
-  els.error.classList.add("hidden");
-  els.report.classList.add("hidden");
-  if (on) startLoading(); else stopLoading();
-}
-function showError(msg) {
-  els.loading.classList.add("hidden");
-  els.error.textContent = msg;
-  els.error.classList.remove("hidden");
-}
-
-// ---------------------------------------------------------------------------
-// Utilities
-// ---------------------------------------------------------------------------
 const esc = v => String(v ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const num = (v, u = "") => v == null ? "—" : `${Number(v).toFixed(3)}${u ? " " + u : ""}`;
-async function api(url, opts) {
-  const r = await fetch(url, opts);
-  const b = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(b.detail || "请求失败");
-  return b;
-}
 
 function qualLabel(item) {
   let qc = item.qualitative_confidence;
@@ -190,9 +20,6 @@ function qualLabel(item) {
   return `<span class="${cls[qc] || 'ev-label weak'}">${labels[qc] || qc}${h}</span>`;
 }
 
-// ---------------------------------------------------------------------------
-// Renderers
-// ---------------------------------------------------------------------------
 function metricEl(label, value, unit) {
   return `<div class="metric"><div class="metric-label">${esc(label)}</div><div class="metric-value">${esc(String(value))}</div><div class="metric-unit">${esc(unit||'')}</div></div>`;
 }
@@ -387,37 +214,40 @@ function renderSummary(mechanisms, hypotheses, validation) {
     `</div>`;
 }
 
-function renderReport(data) {
-  const r = data.v2_report || data;
-  stopLoading();
-  els.loading.classList.add("hidden");
+function initRenderModule({ els, viewer, stopLoading }) {
+  let lastPayload = null; // last combined V3 payload (for localization + export)
 
-  if (!r || !r.physical_evidence) {
-    els.error.textContent = 'Report data structure error: ' + JSON.stringify(Object.keys(data || {})).slice(0, 200);
-    els.error.classList.remove("hidden");
-    return;
-  }
+  function renderReport(data) {
+    const r = data.v2_report || data;
+    stopLoading();
+    els.loading.classList.add("hidden");
 
-  lastPayload = data.v2_report ? data : null;
+    if (!r || !r.physical_evidence) {
+      els.error.textContent = 'Report data structure error: ' + JSON.stringify(Object.keys(data || {})).slice(0, 200);
+      els.error.classList.remove("hidden");
+      return;
+    }
 
-  const computed = (r.physical_evidence || []).filter(e => e.status === "computed");
-  const contact = computed.find(e => e.measurement?.name === "contact_state_delta");
-  const distance = computed.find(e => e.measurement?.name === "nearest_heavy_atom_distance_delta");
-  const sasa = computed.find(e => e.measurement?.name === "residue_sasa_delta");
+    lastPayload = data.v2_report ? data : null;
 
-  const ligId = r.request?.ligand?.identifier || "";
-  const refPath = r.request?.structure?.path || "";
-  const mutPath = r.request?.mutant_structure?.path || "";
-  const refUpId = r.request?.structure?.upload_id || "";
-  const mutUpId = r.request?.mutant_structure?.upload_id || "";
+    const computed = (r.physical_evidence || []).filter(e => e.status === "computed");
+    const contact = computed.find(e => e.measurement?.name === "contact_state_delta");
+    const distance = computed.find(e => e.measurement?.name === "nearest_heavy_atom_distance_delta");
+    const sasa = computed.find(e => e.measurement?.name === "residue_sasa_delta");
 
-  // Whitelist: only the exact value "calibrated" may render as calibrated.
-  const calStatus = r.calibration_status;
-  const calBadge = calStatus === "calibrated" ? "CALIBRATED"
-    : calStatus === "heuristic" ? "⚠ 启发式（未校准）" : "⚠ 校准状态未知";
+    const ligId = r.request?.ligand?.identifier || "";
+    const refPath = r.request?.structure?.path || "";
+    const mutPath = r.request?.mutant_structure?.path || "";
+    const refUpId = r.request?.structure?.upload_id || "";
+    const mutUpId = r.request?.mutant_structure?.upload_id || "";
 
-  const modeNames = { bidirectional: "双向", forward: "正向", reverse: "反向", analysis: "分析" };
-  let html = `
+    // Whitelist: only the exact value "calibrated" may render as calibrated.
+    const calStatus = r.calibration_status;
+    const calBadge = calStatus === "calibrated" ? "CALIBRATED"
+      : calStatus === "heuristic" ? "⚠ 启发式（未校准）" : "⚠ 校准状态未知";
+
+    const modeNames = { bidirectional: "双向", forward: "正向", reverse: "反向", analysis: "分析" };
+    let html = `
     <div class="rpt-header">
       <div>
         <div class="rpt-eyebrow">${esc(modeNames[r.mode] || r.mode || 'analysis')}分析报告</div>
@@ -427,31 +257,31 @@ function renderReport(data) {
       <div class="rpt-badge ${calStatus === "heuristic" ? "heuristic" : ""}">${calBadge}</div>
     </div>`;
 
-  // Export row (only when a combined V3 payload exists)
-  if (lastPayload) {
-    html += `<div style="margin:10px 0">
+    // Export row (only when a combined V3 payload exists)
+    if (lastPayload) {
+      html += `<div style="margin:10px 0">
       <button class="btn-ghost export-btn" data-format="json" style="width:auto;display:inline-block;margin-right:6px">导出 JSON</button>
       <button class="btn-ghost export-btn" data-format="csv" style="width:auto;display:inline-block;margin-right:6px">导出 CSV</button>
       <button class="btn-ghost export-btn" data-format="pymol" style="width:auto;display:inline-block">导出 PyMOL 脚本</button>
     </div>`;
-  }
+    }
 
-  // Protein identity + literature (V3)
-  if (data.protein_identity) html += renderIdentity(data.protein_identity);
-  if (data.v3_literature) html += renderLiterature(data.v3_literature);
+    // Protein identity + literature (V3)
+    if (data.protein_identity) html += renderIdentity(data.protein_identity);
+    if (data.v3_literature) html += renderLiterature(data.v3_literature);
 
-  // V3 context + causal graph
-  if (data.v3_context) html += renderContext(data.v3_context);
-  if (data.v3_causal_graph) html += renderCausalGraph(data.v3_causal_graph);
+    // V3 context + causal graph
+    if (data.v3_context) html += renderContext(data.v3_context);
+    if (data.v3_causal_graph) html += renderCausalGraph(data.v3_causal_graph);
 
-  // Executive Summary
-  html += renderSummary(r.structural_mechanisms, r.functional_hypotheses, r.validation_plan);
+    // Executive Summary
+    html += renderSummary(r.structural_mechanisms, r.functional_hypotheses, r.validation_plan);
 
-  // QC
-  html += renderQC(r.structure_qc);
+    // QC
+    html += renderQC(r.structure_qc);
 
-  // Metrics
-  html += section(zh("Physical Evidence"), `计算 ${computed.length} 项`, "green") +
+    // Metrics
+    html += section(zh("Physical Evidence"), `计算 ${computed.length} 项`, "green") +
     `<div class="metrics">` +
     metricEl("计算证据", computed.length, "项") +
     metricEl("距离变化", distance ? num(distance.measurement?.value, "Å") : "—", "突变体 − 参考") +
@@ -465,166 +295,97 @@ function renderReport(data) {
     </div>` +
     `</div>`;
 
-  // Mechanisms
-  html += section(zh("Structural Mechanisms"), "", "yellow") +
+    // Mechanisms
+    html += section(zh("Structural Mechanisms"), "", "yellow") +
     `<div class="evidence-list">${(r.structural_mechanisms||[]).map(m => evidenceCard(m)).join('')}</div></div>`;
 
-  // Functional
-  if ((r.functional_hypotheses||[]).length) {
-    html += section(zh("Functional Hypotheses"), "", "blue") +
+    // Functional
+    if ((r.functional_hypotheses||[]).length) {
+      html += section(zh("Functional Hypotheses"), "", "blue") +
       `<div class="evidence-list">${r.functional_hypotheses.map(h => evidenceCard(h)).join('')}</div></div>`;
-  }
-
-  // Consistency
-  if ((r.consistency_checks||[]).length) {
-    html += section(zh("Consistency"), "", "purple") +
-      `<div class="evidence-list">${r.consistency_checks.map(c => evidenceCard(c)).join('')}</div></div>`;
-  }
-
-  // Gap Analysis
-  html += renderGapAnalysis(r.structural_mechanisms, r.missing_evidence);
-
-  // Missing Evidence + Validation
-  if ((r.missing_evidence||[]).length) {
-    html += section(zh("Missing Evidence"), "", "yellow") +
-      `<div class="evidence-list">${r.missing_evidence.map(e => evidenceCard(e)).join('')}</div></div>`;
-  }
-  if ((r.validation_plan?.steps||[]).length) {
-    html += section(zh("Validation Plan"), "", "blue") +
-      `<div class="evidence-list">${r.validation_plan.steps.map(s => evidenceCard(s)).join('')}</div></div>`;
-  }
-
-  // Localization (3D evidence anchoring)
-  if (data.evidence_localization) html += renderLocalization(data.evidence_localization);
-
-  // Limitations
-  if ((r.limitations||[]).length) {
-    html += section(zh("Limitations"), "必读", "red") +
-      `<ul style="font-size:.75rem;color:var(--text-muted);padding-left:18px;margin:6px 0">${r.limitations.map(l => `<li>${esc(zh(l))}</li>`).join('')}</ul></div>`;
-  }
-
-  // Calibration warning
-  html += `<div class="cal-warning"><strong>⚠ 未校准启发式评分</strong>所有数值评分为未经实验校准的启发式权重。定性标签 (Strong/Moderate/Weak) 仅供排序参考，不可解释为概率。局部相互作用评分不是 ΔΔG。未提供突变体结构时，不生成任何结构变化。</div>`;
-
-  els.report.innerHTML = html;
-  els.report.classList.remove("hidden");
-
-  // Wire structure viewer buttons
-  els.report.querySelectorAll(".struct-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      viewerMode = btn.dataset.type;
-      structureData.reference = refPath || refUpId ? { pdbText: null, path: refPath, uploadId: refUpId } : null;
-      structureData.mutant = mutPath || mutUpId ? { pdbText: null, path: mutPath, uploadId: mutUpId } : null;
-      $$(".viewer-tab").forEach(x => x.classList.toggle("active", x.dataset.mode === viewerMode));
-      showStructurePanel();
-    });
-  });
-
-  // Wire localization buttons
-  const loc = data.evidence_localization;
-  els.report.querySelectorAll(".loc-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      if (!viewer) initViewer();
-      const kind = btn.dataset.loc;
-      if (kind === "mutation") {
-        highlightState = { chain: loc.mutation_chain || "", resi: String(loc.mutation_residue_number), ligand: "", neighbors: [] };
-      } else if (kind === "ligand") {
-        highlightState = { chain: "", resi: "", ligand: loc.ligand || "", neighbors: [] };
-      } else if (kind === "neighbors") {
-        highlightState = { chain: "", resi: "", ligand: loc.ligand || "", neighbors: parseNeighborLabels(loc.neighborhood_4a) };
-      }
-      els.viewerPanel.classList.remove("hidden");
-      showStructurePanel();
-    });
-  });
-
-  // Wire export buttons
-  els.report.querySelectorAll(".export-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const fmt = btn.dataset.format;
-      const url = `/export/${encodeURIComponent(lastPayload.report_id)}?format=${fmt}`;
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    });
-  });
-}
-
-// ---------------------------------------------------------------------------
-// Analysis flows
-// ---------------------------------------------------------------------------
-async function runJsonRequest(payload, endpoint) {
-  setLoading(true);
-  try { renderReport(await api(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })); }
-  catch (e) { showError(e.message); }
-}
-
-function runExample() {
-  runJsonRequest(examplePayload, "/v3/analyze");
-}
-function runV3() {
-  const payload = { ...examplePayload };
-  delete payload.phenotype;
-  runJsonRequest(payload, "/v3/analyze");
-}
-function runReverseExample() {
-  runJsonRequest(reverseExamplePayload, "/reverse");
-}
-
-$("#run-example")?.addEventListener("click", runExample);
-$("#run-v3-example")?.addEventListener("click", runV3);
-
-// Real form submission: read the sidebar inputs and send multipart uploads.
-els.form.addEventListener("submit", async e => {
-  e.preventDefault();
-  const refFile = $("#reference-file").files[0];
-  if (!refFile) { showError("请先选择参考结构 (WT) 文件，或点击示例按钮。"); return; }
-  setLoading(true);
-  try {
-    if (analysisMode === "reverse") {
-      const fd = new FormData();
-      fd.append("reference_file", refFile);
-      fd.append("ligand", $("#ligand").value.trim());
-      fd.append("phenotype", $("#phenotype").value);
-      renderReport(await api("/reverse-upload", { method: "POST", body: fd }));
-    } else {
-      const fd = new FormData();
-      fd.append("reference_file", refFile);
-      const mutFile = $("#mutant-file").files[0];
-      if (mutFile) fd.append("mutant_file", mutFile);
-      fd.append("ligand", $("#ligand").value.trim());
-      fd.append("mutation", $("#mutation").value.trim().toUpperCase());
-      const chain = $("#chain").value.trim();
-      if (chain) fd.append("chain", chain);
-      fd.append("phenotype", $("#phenotype").value);
-      renderReport(await api("/v3/analyze-upload", { method: "POST", body: fd }));
     }
-  } catch (err) { showError(err.message); }
-});
 
-// Mode switching
-$$(".mode-tab").forEach(tab => {
-  tab.addEventListener("click", () => {
-    $$(".mode-tab").forEach(t => t.classList.remove("active"));
-    tab.classList.add("active");
-    analysisMode = tab.dataset.mode;
-    const isRev = analysisMode === "reverse";
-    $("#mutation-fields").style.opacity = isRev ? "0.4" : "1";
-    $("#mutation-fields").style.pointerEvents = isRev ? "none" : "auto";
-    $("#mutant-file-group").style.opacity = isRev ? "0.4" : "1";
-    $("#mutant-file-group").style.pointerEvents = isRev ? "none" : "auto";
-    $("#mutation").required = !isRev;
-  });
-});
+    // Consistency
+    if ((r.consistency_checks||[]).length) {
+      html += section(zh("Consistency"), "", "purple") +
+      `<div class="evidence-list">${r.consistency_checks.map(c => evidenceCard(c)).join('')}</div></div>`;
+    }
 
-// Health check
-fetch("/health").then(r => {
-  if (r.ok) $("#api-status").innerHTML = '● 就绪';
-  else throw new Error();
-}).catch(() => {
-  $("#api-status").innerHTML = '● 离线';
-  $("#api-status").style.color = 'var(--red)';
-});
+    // Gap Analysis
+    html += renderGapAnalysis(r.structural_mechanisms, r.missing_evidence);
+
+    // Missing Evidence + Validation
+    if ((r.missing_evidence||[]).length) {
+      html += section(zh("Missing Evidence"), "", "yellow") +
+      `<div class="evidence-list">${r.missing_evidence.map(e => evidenceCard(e)).join('')}</div></div>`;
+    }
+    if ((r.validation_plan?.steps||[]).length) {
+      html += section(zh("Validation Plan"), "", "blue") +
+      `<div class="evidence-list">${r.validation_plan.steps.map(s => evidenceCard(s)).join('')}</div></div>`;
+    }
+
+    // Localization (3D evidence anchoring)
+    if (data.evidence_localization) html += renderLocalization(data.evidence_localization);
+
+    // Limitations
+    if ((r.limitations||[]).length) {
+      html += section(zh("Limitations"), "必读", "red") +
+      `<ul style="font-size:.75rem;color:var(--text-muted);padding-left:18px;margin:6px 0">${r.limitations.map(l => `<li>${esc(zh(l))}</li>`).join('')}</ul></div>`;
+    }
+
+    // Calibration warning
+    html += `<div class="cal-warning"><strong>⚠ 未校准启发式评分</strong>所有数值评分为未经实验校准的启发式权重。定性标签 (Strong/Moderate/Weak) 仅供排序参考，不可解释为概率。局部相互作用评分不是 ΔΔG。未提供突变体结构时，不生成任何结构变化。</div>`;
+
+    els.report.innerHTML = html;
+    els.report.classList.remove("hidden");
+
+    // Wire structure viewer buttons
+    els.report.querySelectorAll(".struct-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        viewer.setViewerMode(btn.dataset.type);
+        viewer.setStructureData({
+          reference: refPath || refUpId ? { pdbText: null, path: refPath, uploadId: refUpId } : null,
+          mutant: mutPath || mutUpId ? { pdbText: null, path: mutPath, uploadId: mutUpId } : null,
+        });
+        document.querySelectorAll(".viewer-tab").forEach(x => x.classList.toggle("active", x.dataset.mode === btn.dataset.type));
+        viewer.showStructurePanel();
+      });
+    });
+
+    // Wire localization buttons
+    const loc = data.evidence_localization;
+    els.report.querySelectorAll(".loc-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        viewer.initViewer();
+        const kind = btn.dataset.loc;
+        if (kind === "mutation") {
+          viewer.setHighlightState({ chain: loc.mutation_chain || "", resi: String(loc.mutation_residue_number), ligand: "", neighbors: [] });
+        } else if (kind === "ligand") {
+          viewer.setHighlightState({ chain: "", resi: "", ligand: loc.ligand || "", neighbors: [] });
+        } else if (kind === "neighbors") {
+          viewer.setHighlightState({ chain: "", resi: "", ligand: loc.ligand || "", neighbors: viewer.parseNeighborLabels(loc.neighborhood_4a) });
+        }
+        els.viewerPanel.classList.remove("hidden");
+        viewer.showStructurePanel();
+      });
+    });
+
+    // Wire export buttons
+    els.report.querySelectorAll(".export-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const fmt = btn.dataset.format;
+        const url = `/export/${encodeURIComponent(lastPayload.report_id)}?format=${fmt}`;
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      });
+    });
+  }
+
+  return { renderReport };
+}
+
+export { initRenderModule };

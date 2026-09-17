@@ -162,11 +162,15 @@ IDs, forming a directed acyclic graph that a client can render and audit.
 class ForwardReasoner(Protocol):
     def reason(self, request: AnalysisRequest, evidence: tuple[PhysicalEvidence, ...]) -> ForwardResult: ...
 
+
 class ReverseReasoner(Protocol):
     def reason(self, request: AnalysisRequest, evidence: tuple[PhysicalEvidence, ...]) -> ReverseResult: ...
 
+
 class ConsistencyChecker(Protocol):
-    def check(self, forward: ForwardResult, reverse: ReverseResult, evidence: tuple[PhysicalEvidence, ...]) -> tuple[ConsistencyCheck, ...]: ...
+    def check(
+        self, forward: ForwardResult, reverse: ReverseResult, evidence: tuple[PhysicalEvidence, ...]
+    ) -> tuple[ConsistencyCheck, ...]: ...
 ```
 
 **Current implementations:**

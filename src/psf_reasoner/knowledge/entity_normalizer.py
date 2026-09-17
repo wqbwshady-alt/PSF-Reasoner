@@ -11,19 +11,19 @@ being used as evidence.  Prevents common errors like:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import StrEnum
 
 
 class EvidenceApplicability(StrEnum):
     """How directly a piece of literature evidence applies to the query."""
 
-    EXACT_MATCH = "exact_match"              # same protein, same site, same substitution, same ligand
+    EXACT_MATCH = "exact_match"  # same protein, same site, same substitution, same ligand
     SAME_SITE_SAME_PROTEIN = "same_site_same_protein"  # same site, different substitution
-    SAME_SITE_HOMOLOG = "same_site_homolog"   # homologous site in related protein
-    NEARBY_SITE = "nearby_site"              # nearby residue in same protein
+    SAME_SITE_HOMOLOG = "same_site_homolog"  # homologous site in related protein
+    NEARBY_SITE = "nearby_site"  # nearby residue in same protein
     SAME_PROTEIN_MECHANISM = "same_protein_mechanism"  # same protein, general mechanism
-    FAMILY_ANALOGY = "family_analogy"        # same protein family, analogous mechanism
+    FAMILY_ANALOGY = "family_analogy"  # same protein family, analogous mechanism
     GENERAL_BIOCHEMICAL = "general_biochemical"  # general biochemical principle
 
 
@@ -205,10 +205,14 @@ def classify_evidence_applicability(
         return EvidenceApplicability.SAME_SITE_SAME_PROTEIN
     if same_family and same_site:
         return EvidenceApplicability.SAME_SITE_HOMOLOG
-    if same_protein and query_mutation and evidence_mutation:
+    if (
+        same_protein
+        and query_mutation
+        and evidence_mutation
         # Check if sites are nearby (within 5 residues)
-        if abs(query_mutation.residue_number - evidence_mutation.residue_number) <= 5:
-            return EvidenceApplicability.NEARBY_SITE
+        and abs(query_mutation.residue_number - evidence_mutation.residue_number) <= 5
+    ):
+        return EvidenceApplicability.NEARBY_SITE
     if same_protein:
         return EvidenceApplicability.SAME_PROTEIN_MECHANISM
     if same_family:

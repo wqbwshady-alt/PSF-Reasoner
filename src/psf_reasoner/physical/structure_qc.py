@@ -7,6 +7,8 @@ pocket / ligand RMSD for paired WT/mutant structures.
 
 from __future__ import annotations
 
+import logging
+
 import gemmi
 
 from psf_reasoner.physical.structure import ParsedStructure, StructureParser
@@ -19,15 +21,36 @@ from psf_reasoner.schemas.preparation import (
     StructureQCReport,
 )
 
+logger = logging.getLogger(__name__)
+
 # ---------------------------------------------------------------------------
 # Residue sets for pocket definition (HIV-1 protease numbering as default;
 # the pocket is ligand-centric and derived from the structure itself).
 # ---------------------------------------------------------------------------
-_STANDARD_RESIDUE_NAMES = frozenset({
-    "ALA", "ARG", "ASN", "ASP", "CYS", "GLN", "GLU", "GLY", "HIS",
-    "ILE", "LEU", "LYS", "MET", "PHE", "PRO", "SER", "THR", "TRP",
-    "TYR", "VAL",
-})
+_STANDARD_RESIDUE_NAMES = frozenset(
+    {
+        "ALA",
+        "ARG",
+        "ASN",
+        "ASP",
+        "CYS",
+        "GLN",
+        "GLU",
+        "GLY",
+        "HIS",
+        "ILE",
+        "LEU",
+        "LYS",
+        "MET",
+        "PHE",
+        "PRO",
+        "SER",
+        "THR",
+        "TRP",
+        "TYR",
+        "VAL",
+    }
+)
 
 
 class StructureQCProvider:
@@ -72,9 +95,7 @@ class StructureQCProvider:
         rmsd_ligand = _ligand_rmsd(reference, mutant, request.ligand.identifier)
 
         # -- ligand mapping summary --------------------------------------
-        ligand_summary = _ligand_mapping_summary(
-            reference, mutant, request.ligand.identifier
-        )
+        ligand_summary = _ligand_mapping_summary(reference, mutant, request.ligand.identifier)
 
         issues = list(chain_issues)
 
@@ -91,8 +112,9 @@ class StructureQCProvider:
             ),
             altloc_ref=altloc_ref,
             altloc_mut=altloc_mut,
-            chain_mismatch=any(m.sequence_identity is not None and m.sequence_identity < 0.95
-                              for m in chain_mappings),
+            chain_mismatch=any(
+                m.sequence_identity is not None and m.sequence_identity < 0.95 for m in chain_mappings
+            ),
         )
 
         return StructureQCReport(
@@ -125,7 +147,8 @@ def _resolution(structure: ParsedStructure) -> float | None:
     try:
         gs = gemmi.read_structure(structure.source_path)
         return gs.resolution  # type: ignore[no-any-return]
-    except Exception:
+    except Exception as exc:
+        logger.debug("resolution lookup failed for %s: %s", structure.source_path, exc)
         return None
 
 
@@ -144,11 +167,7 @@ def _chain_mappings(
         ref_names = frozenset(ref_residues.values())
         mut_names = frozenset(mut_residues.values())
         common = ref_names & mut_names
-        identity = (
-            len(common) / max(len(ref_names | mut_names), 1)
-            if (ref_names or mut_names)
-            else None
-        )
+        identity = len(common) / max(len(ref_names | mut_names), 1) if (ref_names or mut_names) else None
         mappings.append(
             ChainMapping(
                 reference_chain=chain if chain in ref_chains else "",
@@ -170,9 +189,7 @@ def _chain_mappings(
                         affected_entities=(chain,),
                     )
                 )
-            if chain in ref_chains and chain in mut_chains and (
-                len(ref_residues) != len(mut_residues)
-            ):
+            if chain in ref_chains and chain in mut_chains and (len(ref_residues) != len(mut_residues)):
                 issues.append(
                     PreparationIssue(
                         code="chain_residue_count_mismatch",
@@ -194,9 +211,7 @@ def _protein_chains(structure: ParsedStructure) -> set[str]:
     return chains
 
 
-def _numbered_residues(
-    structure: ParsedStructure, chain: str
-) -> dict[int, str]:
+def _numbered_residues(structure: ParsedStructure, chain: str) -> dict[int, str]:
     result: dict[int, str] = {}
     for residue in structure.residues:
         if residue.is_hetero or residue.is_water:
@@ -244,8 +259,7 @@ def _missing_residue_labels(structure: ParsedStructure) -> tuple[str, ...]:
     for residue in structure.residues:
         if residue.is_hetero or residue.is_water:
             continue
-        atom_names = frozenset(atom.name for atom in residue.atoms
-                               if atom.element not in {"D", "H"})
+        atom_names = frozenset(atom.name for atom in residue.atoms if atom.element not in {"D", "H"})
         backbone = {"N", "CA", "C", "O"}
         if not backbone.issubset(atom_names):
             labels.append(residue.identity.label)
@@ -263,24 +277,16 @@ def _missing_atom_labels(structure: ParsedStructure) -> tuple[str, ...]:
     return tuple(labels)
 
 
-def _occupancy_issues(
-    reference: ParsedStructure, mutant: ParsedStructure
-) -> list[str]:
+def _occupancy_issues(reference: ParsedStructure, mutant: ParsedStructure) -> list[str]:
     issues: list[str] = []
     for role, structure in (("reference", reference), ("mutant", mutant)):
         low_occ = [
-            atom.label
-            for residue in structure.residues
-            for atom in residue.atoms
-            if atom.occupancy < 0.5
+            atom.label for residue in structure.residues for atom in residue.atoms if atom.occupancy < 0.5
         ]
         if low_occ:
             shown = low_occ[:10]
             suffix = "" if len(low_occ) <= 10 else f" and {len(low_occ) - 10} more"
-            issues.append(
-                f"{role}: {len(low_occ)} atoms with occupancy < 0.5 "
-                f"({', '.join(shown)}{suffix})"
-            )
+            issues.append(f"{role}: {len(low_occ)} atoms with occupancy < 0.5 ({', '.join(shown)}{suffix})")
     return issues
 
 
@@ -308,9 +314,7 @@ def _pocket_ca_rmsd(
             if residue.is_hetero or residue.is_water:
                 continue
             for atom in residue.atoms:
-                if atom.name == "CA" and any(
-                    atom_distance(atom, la) <= POCKET_RADIUS for la in ligand_atoms
-                ):
+                if atom.name == "CA" and any(atom_distance(atom, la) <= POCKET_RADIUS for la in ligand_atoms):
                     ca_atoms.append(atom)
                     break
         return ca_atoms
@@ -383,10 +387,10 @@ def _rmsd(atoms_a, atoms_b) -> float:
     if n == 0:
         return 0.0
     ssq = sum(
-        (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2
-        for a, b in zip(atoms_a, atoms_b)
+        (a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2 for a, b in zip(atoms_a, atoms_b, strict=True)
     )
     import math
+
     return math.sqrt(ssq / n)
 
 

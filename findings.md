@@ -377,51 +377,51 @@ Benchmark data schema (per case):
 ```python
 class BenchmarkCase:
     # --- Identity ---
-    case_id: str                          # e.g. "hiv1-v82a-mk1"
-    protein_family: str                   # e.g. "HIV-1_protease"
-    protein_uniprot: str | None           # optional
+    case_id: str  # e.g. "hiv1-v82a-mk1"
+    protein_family: str  # e.g. "HIV-1_protease"
+    protein_uniprot: str | None  # optional
 
     # --- WT structure ---
-    wt_pdb_id: str                        # e.g. "1SDT"
+    wt_pdb_id: str  # e.g. "1SDT"
     wt_chain: str
-    wt_mutation_background: list[str]     # background mutations relative to reference
+    wt_mutation_background: list[str]  # background mutations relative to reference
 
     # --- Mutant structure ---
-    mutant_pdb_id: str | None             # None if mutant is modelled only
-    mutant_source: str                    # "experimental" | "modelled" | "unknown"
-    mutation_notation: str                # e.g. "V82A"
+    mutant_pdb_id: str | None  # None if mutant is modelled only
+    mutant_source: str  # "experimental" | "modelled" | "unknown"
+    mutation_notation: str  # e.g. "V82A"
     mutation_chain: str
 
     # --- Ligand ---
-    ligand_identifier: str                # e.g. "MK1"
+    ligand_identifier: str  # e.g. "MK1"
     ligand_chain: str | None
 
     # --- Functional outcome (experimental) ---
-    assay_type: str                       # e.g. "IC50", "Ki", "Kd", "fold_change"
-    assay_conditions: str                 # e.g. "pH 4.7, 25°C, 0.1 M NaCl"
+    assay_type: str  # e.g. "IC50", "Ki", "Kd", "fold_change"
+    assay_conditions: str  # e.g. "pH 4.7, 25°C, 0.1 M NaCl"
     wt_value: float
     wt_unit: str
     mutant_value: float
-    mutant_unit: str                      # must match wt_unit
-    fold_change: float | None             # computed or reported
-    direction: str                        # "increase" | "decrease" | "unchanged"
-    phenotype: str                        # e.g. "drug_resistance", "activity_loss"
+    mutant_unit: str  # must match wt_unit
+    fold_change: float | None  # computed or reported
+    direction: str  # "increase" | "decrease" | "unchanged"
+    phenotype: str  # e.g. "drug_resistance", "activity_loss"
 
     # --- Literature provenance ---
     pmid: str
     doi: str | None
-    source_table_or_figure: str           # e.g. "Table 2, row 3"
-    notes: str                            # free-text: any caveats, data extraction notes
+    source_table_or_figure: str  # e.g. "Table 2, row 3"
+    notes: str  # free-text: any caveats, data extraction notes
 
     # --- Mechanism label (expert-curated, separate from functional outcome) ---
-    mechanism_label: str | None           # e.g. "loss of hydrophobic packing at S1 pocket"
-    mechanism_evidence: str               # "literature" | "structural_analysis" | "expert_review" | "none"
-    mechanism_source: str | None          # e.g. "PMID:12345678, Figure 4"
-    mechanism_review_status: str          # "unreviewed" | "single_reviewer" | "consensus"
-    mechanism_confidence: float           # 0.0-1.0, curator's confidence in this label
+    mechanism_label: str | None  # e.g. "loss of hydrophobic packing at S1 pocket"
+    mechanism_evidence: str  # "literature" | "structural_analysis" | "expert_review" | "none"
+    mechanism_source: str | None  # e.g. "PMID:12345678, Figure 4"
+    mechanism_review_status: str  # "unreviewed" | "single_reviewer" | "consensus"
+    mechanism_confidence: float  # 0.0-1.0, curator's confidence in this label
 
     # --- Exclusion flags ---
-    excluded_from_calibration: bool       # True if data quality issues, background mutations, etc.
+    excluded_from_calibration: bool  # True if data quality issues, background mutations, etc.
     exclusion_reason: str | None
 ```
 

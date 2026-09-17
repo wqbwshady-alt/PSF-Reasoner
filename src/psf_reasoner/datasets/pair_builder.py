@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from psf_reasoner.datasets.schemas import AssayType, MutationLigandPair, ReviewStatus
+from psf_reasoner.datasets.schemas import AssayType, MutationLigandPair
 
 
 @dataclass
@@ -19,7 +19,7 @@ class CandidateRecord:
     protein_accession: str = ""
     organism: str = ""
     residue_position: int = 0
-    wt_residue: str = ""      # WT residue at this position
+    wt_residue: str = ""  # WT residue at this position
     observed_residue: str = ""  # what was actually measured (WT or mutant)
     ligand_id: str = ""
     assay_type: AssayType = AssayType.OTHER
@@ -89,10 +89,16 @@ def build_pairs(
                     quality = "conditions_differ"
 
                 # Check temperature
-                if strict_conditions and wt.temperature_kelvin and mut.temperature_kelvin:
-                    if abs(wt.temperature_kelvin - mut.temperature_kelvin) > 5:
-                        issues.append(f"temperature differs: {wt.temperature_kelvin}K vs {mut.temperature_kelvin}K")
-                        quality = "conditions_differ"
+                if (
+                    strict_conditions
+                    and wt.temperature_kelvin
+                    and mut.temperature_kelvin
+                    and abs(wt.temperature_kelvin - mut.temperature_kelvin) > 5
+                ):
+                    issues.append(
+                        f"temperature differs: {wt.temperature_kelvin}K vs {mut.temperature_kelvin}K"
+                    )
+                    quality = "conditions_differ"
 
                 # Check unit match
                 if wt.unit.lower() != mut.unit.lower():

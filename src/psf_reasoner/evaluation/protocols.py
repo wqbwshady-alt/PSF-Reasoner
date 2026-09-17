@@ -116,6 +116,5 @@ class BenchmarkDataset(ScientificModel):
     @property
     def calibration_ready(self) -> tuple[BenchmarkCase, ...]:
         return tuple(
-            c for c in self.cases
-            if not c.excluded_from_calibration and c.mechanism_label is not None
+            c for c in self.cases if not c.excluded_from_calibration and c.mechanism_label is not None
         )

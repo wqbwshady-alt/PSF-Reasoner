@@ -154,3 +154,139 @@ def test_workbench_is_served_at_root() -> None:
 
     assert response.status_code == 200
     assert "PSF-Reasoner" in response.text
+
+
+class TestStructureInputBoundary:
+    """Raw filesystem paths must never let the API read arbitrary files."""
+
+    def _client(self, upload_dir: Path) -> TestClient:
+        upload_dir.mkdir()
+        return TestClient(create_app(create_default_runner(), upload_dir=upload_dir))
+
+    def test_rejects_arbitrary_existing_file(self, structure_file: Path, tmp_path: Path) -> None:
+        client = self._client(tmp_path / ".psf_uploads")
+        payload = {
+            "structure": {"path": str(structure_file)},  # exists, but outside allowed roots
+            "ligand": {"identifier": "MK1"},
+            "mutation": {"notation": "V82A", "chain": "A"},
+            "phenotype": {"name": "drug_resistance"},
+        }
+        response = client.post("/analyze", json=payload)
+        assert response.status_code == 400
+        assert "upload" in response.json()["detail"].lower()
+
+    def test_rejects_absolute_path(self, tmp_path: Path) -> None:
+        client = self._client(tmp_path / ".psf_uploads")
+        payload = {
+            "structure": {"path": "/etc/hosts"},
+            "ligand": {"identifier": "MK1"},
+            "mutation": {"notation": "V82A", "chain": "A"},
+            "phenotype": {"name": "drug_resistance"},
+        }
+        assert client.post("/analyze", json=payload).status_code == 400
+
+    def test_rejects_parent_traversal(self, tmp_path: Path) -> None:
+        upload_dir = tmp_path / ".psf_uploads"
+        upload_dir.mkdir()
+        secret = tmp_path / "secret.pdb"
+        secret.write_text("ATOM", encoding="ascii")
+        client = TestClient(create_app(create_default_runner(), upload_dir=upload_dir))
+        payload = {
+            "structure": {"path": str(upload_dir / ".." / "secret.pdb")},
+            "ligand": {"identifier": "MK1"},
+            "mutation": {"notation": "V82A", "chain": "A"},
+            "phenotype": {"name": "drug_resistance"},
+        }
+        assert client.post("/analyze", json=payload).status_code == 400
+
+    def test_rejects_symlink_escaping_upload_dir(self, structure_file: Path, tmp_path: Path) -> None:
+        upload_dir = tmp_path / ".psf_uploads"
+        upload_dir.mkdir()
+        (upload_dir / "link.pdb").symlink_to(structure_file)
+        client = TestClient(create_app(create_default_runner(), upload_dir=upload_dir))
+        payload = {
+            "structure": {"path": str(upload_dir / "link.pdb")},
+            "ligand": {"identifier": "MK1"},
+            "mutation": {"notation": "V82A", "chain": "A"},
+            "phenotype": {"name": "drug_resistance"},
+        }
+        assert client.post("/analyze", json=payload).status_code == 400
+
+    def test_accepts_bundled_example(self, tmp_path: Path) -> None:
+        client = self._client(tmp_path / ".psf_uploads")
+        example = Path(__file__).parent.parent / "examples" / "data" / "1sdt.cif"
+        payload = {
+            "structure": {"path": str(example), "format": "mmcif"},
+            "mutant_structure": {"path": str(example.with_name("1sdv.cif")), "format": "mmcif"},
+            "ligand": {"identifier": "MK1"},
+            "mutation": {"notation": "V82A", "chain": "A"},
+            "phenotype": {"name": "drug_resistance"},
+        }
+        response = client.post("/analyze", json=payload)
+        assert response.status_code == 200, response.text
+
+    def test_structure_endpoint_rejects_symlink_escape(self, structure_file: Path, tmp_path: Path) -> None:
+        upload_dir = tmp_path / ".psf_uploads"
+        upload_dir.mkdir()
+        (upload_dir / "link.pdb").symlink_to(structure_file)
+        client = TestClient(create_app(create_default_runner(), upload_dir=upload_dir))
+        resp = client.get("/structure", params={"path": str(upload_dir / "link.pdb")})
+        assert resp.status_code == 403
+
+
+class TestUploadMaintenance:
+    def test_admin_maintain_uploads_route_is_removed(self, tmp_path: Path) -> None:
+        upload_dir = tmp_path / ".psf_uploads"
+        upload_dir.mkdir()
+        client = TestClient(create_app(create_default_runner(), upload_dir=upload_dir))
+        resp = client.post("/admin/maintain-uploads")
+        assert resp.status_code == 404
+
+    def test_startup_cleanup_removes_expired_uploads(self, structure_file: Path, tmp_path: Path) -> None:
+        import os
+        import time
+
+        upload_dir = tmp_path / ".psf_uploads"
+        upload_dir.mkdir()
+        old = upload_dir / "old.pdb"
+        old.write_text("OLD", encoding="ascii")
+        old_time = time.time() - 48 * 3600
+        os.utime(old, (old_time, old_time))
+
+        app = create_app(create_default_runner(), upload_dir=upload_dir)
+        with TestClient(app):
+            pass  # lifespan runs maintain_uploads on startup
+        assert not old.exists()
+
+    def test_maintenance_is_idempotent(self, tmp_path: Path) -> None:
+        from psf_reasoner.infrastructure.uploads import maintain_uploads
+
+        upload_dir = tmp_path / ".psf_uploads"
+        upload_dir.mkdir()
+        (upload_dir / "a.pdb").write_text("A", encoding="ascii")
+        first = maintain_uploads(upload_dir)
+        second = maintain_uploads(upload_dir)
+        assert first["age_removed"] == 0
+        assert second == {"age_removed": 0, "count_removed": 0}
+        assert (upload_dir / "a.pdb").exists()
+
+
+def test_workbench_static_modules_are_served() -> None:
+    client = TestClient(create_app(create_default_runner()))
+
+    index = client.get("/")
+    assert index.status_code == 200
+    assert "modules/main.js" in index.text
+    assert "app.js?v=v5d" not in index.text
+
+    for asset in (
+        "/client/i18n.js",
+        "/client/modules/main.js",
+        "/client/modules/api.js",
+        "/client/modules/loading.js",
+        "/client/modules/viewer.js",
+        "/client/modules/render.js",
+        "/client/modules/form.js",
+    ):
+        response = client.get(asset)
+        assert response.status_code == 200, asset

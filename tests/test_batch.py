@@ -50,14 +50,16 @@ class TestBatchSchema:
     def test_manifest_json_round_trip(self, structure_file: Path) -> None:
         from psf_reasoner.schemas.inputs import LigandSpec, MutationSpec, StructureInput
 
-        manifest = _manifest([
-            BatchCase(
-                case_id="test-1",
-                structure=StructureInput(path=str(structure_file)),
-                ligand=LigandSpec(identifier="MK1"),
-                mutation=MutationSpec(notation="V82A", chain="A"),
-            )
-        ])
+        manifest = _manifest(
+            [
+                BatchCase(
+                    case_id="test-1",
+                    structure=StructureInput(path=str(structure_file)),
+                    ligand=LigandSpec(identifier="MK1"),
+                    mutation=MutationSpec(notation="V82A", chain="A"),
+                )
+            ]
+        )
         data = manifest.model_dump_json()
         reloaded = BatchManifest.model_validate_json(data)
         assert reloaded.batch_id == manifest.batch_id
@@ -108,7 +110,7 @@ class TestBatchRunner:
         assert result.total == 2
         assert result.failed >= 1  # bad case always fails
         # bad case should report an error
-        bad_job = [j for j in result.jobs if j.case_id == "bad"][0]
+        bad_job = next(j for j in result.jobs if j.case_id == "bad")
         assert bad_job.status == "error"
         assert bad_job.error is not None
 
@@ -128,14 +130,16 @@ class TestBatchRunner:
         from psf_reasoner.schemas.inputs import LigandSpec, MutationSpec, StructureInput
 
         manifest_path = tmp_path / "manifest.json"
-        manifest = _manifest([
-            BatchCase(
-                case_id="cli-test",
-                structure=StructureInput(path=str(structure_file)),
-                ligand=LigandSpec(identifier="MK1"),
-                mutation=MutationSpec(notation="V82A", chain="A"),
-            )
-        ])
+        manifest = _manifest(
+            [
+                BatchCase(
+                    case_id="cli-test",
+                    structure=StructureInput(path=str(structure_file)),
+                    ligand=LigandSpec(identifier="MK1"),
+                    mutation=MutationSpec(notation="V82A", chain="A"),
+                )
+            ]
+        )
         manifest_path.write_text(json.dumps(manifest.model_dump(mode="json")))
 
         runner = CliRunner()

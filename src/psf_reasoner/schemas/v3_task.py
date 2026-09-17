@@ -27,7 +27,7 @@ class PredictionTask(StrEnum):
 class TargetLabel(StrEnum):
     """Standardised experimental quantities for binding affinity change."""
 
-    DDG_BINDING = "ddG_binding"        # ΔΔG in kcal/mol
+    DDG_BINDING = "ddG_binding"  # ΔΔG in kcal/mol
     LOG_KD_FOLD_CHANGE = "log_Kd_fold_change"  # log10(Kd_mutant / Kd_WT)
     LOG_KI_FOLD_CHANGE = "log_Ki_fold_change"  # log10(Ki_mutant / Ki_WT)
 
@@ -65,31 +65,31 @@ class BenchmarkSampleSpec(ScientificModel):
     mutant_modelled: bool = False
 
     # Mutation
-    mutation_notation: str          # e.g. "V82A"
+    mutation_notation: str  # e.g. "V82A"
     mutation_chain: str
 
     # Ligand
-    ligand_identifier: str           # 3-letter PDB code
+    ligand_identifier: str  # 3-letter PDB code
 
     # Experimental label
     target_label: TargetLabel
     experimental_value: float
     experimental_unit: str
-    experimental_condition: str      # pH, temperature, buffer, etc.
+    experimental_condition: str  # pH, temperature, buffer, etc.
 
     # Data provenance
-    literature_source: str           # PMID or DOI
-    data_quality: str = "curated"    # curated | reported | inferred
+    literature_source: str  # PMID or DOI
+    data_quality: str = "curated"  # curated | reported | inferred
     notes: str | None = None
 
     # Split key — ensures protein-level splitting for evaluation
-    split_group: str                 # e.g. "HIV-1_protease", "DHFR", ...
+    split_group: str  # e.g. "HIV-1_protease", "DHFR", ...
 
 
 # ---------------------------------------------------------------------------
 # P0 completion criteria for the benchmark
 # ---------------------------------------------------------------------------
 
-BENCHMARK_PILOT_MINIMUM = 100    # minimum samples for pilot
-BENCHMARK_PILOT_TARGET = 300     # target for pilot completion
+BENCHMARK_PILOT_MINIMUM = 100  # minimum samples for pilot
+BENCHMARK_PILOT_TARGET = 300  # target for pilot completion
 BENCHMARK_EXPANDED_TARGET = 1000  # long-term target

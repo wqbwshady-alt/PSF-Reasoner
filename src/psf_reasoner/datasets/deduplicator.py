@@ -25,16 +25,19 @@ def deduplicate(samples: list[MutationLigandPair]) -> list[MutationLigandPair]:
         groups[key].append(s)
 
     result = []
-    for key, group in groups.items():
+    for group in groups.values():
         if len(group) == 1:
             result.append(group[0])
         else:
             # Sort by quality heuristics
             def score(s: MutationLigandPair) -> int:
                 pts = 0
-                if s.has_structure_pair: pts += 100
-                if s.review_status.value == "accepted": pts += 50
-                if s.pmid: pts += min(int(s.pmid) // 100000, 50)
+                if s.has_structure_pair:
+                    pts += 100
+                if s.review_status.value == "accepted":
+                    pts += 50
+                if s.pmid:
+                    pts += min(int(s.pmid) // 100000, 50)
                 return pts
 
             group.sort(key=score, reverse=True)
@@ -59,8 +62,7 @@ def check_background_mutations(samples: list[MutationLigandPair]) -> list[str]:
             )
         if s.wt_pdb and s.mutant_pdb and s.wt_pdb == s.mutant_pdb:
             warnings.append(
-                f"{s.sample_id}: wt_pdb == mutant_pdb ({s.wt_pdb}) — "
-                "may not be a genuine structure pair"
+                f"{s.sample_id}: wt_pdb == mutant_pdb ({s.wt_pdb}) — may not be a genuine structure pair"
             )
     return warnings
 

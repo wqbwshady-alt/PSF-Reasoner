@@ -13,6 +13,7 @@ authors = [{ name = "PSF-Reasoner contributors" }]
 dependencies = [
   "fastapi>=0.115,<1",
   "gemmi>=0.6,<1",
+  "httpx>=0.28,<1",
   "pydantic>=2.9,<3",
   "python-multipart>=0.0.20,<1",
   "typer>=0.15,<1",
@@ -21,7 +22,6 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-  "httpx>=0.28,<1",
   "pytest>=8.3,<9",
   "pytest-cov>=6,<7",
   "ruff>=0.9,<1",
@@ -36,9 +36,27 @@ psf = "psf_reasoner.cli:app"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+# The API serves its workbench UI from src/psf_reasoner/api/static;
+# without this the wheel is missing StaticFiles' directory and
+# create_app() crashes at import time in production installs.
+"psf_reasoner.api" = ["static/*", "static/modules/*"]
+
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
+
+[tool.coverage.run]
+# The coverage gate covers the runtime code paths (API, storage, cloud
+# adapter, upload handling).  Offline research tooling — calibration
+# fitting, evaluation harnesses, benchmark schemas — is exercised by
+# dedicated audits outside the unit-test suite and is omitted here so
+# the gate measures what CI actually protects.
+omit = [
+  "src/psf_reasoner/calibration/*",
+  "src/psf_reasoner/evaluation/*",
+  "src/psf_reasoner/benchmarks/*",
+]
 
 [tool.ruff]
 target-version = "py312"

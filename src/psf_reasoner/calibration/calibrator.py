@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import exp
+from typing import ClassVar
 
 from psf_reasoner.calibration.feature_schema import FeatureVector
 
@@ -24,7 +25,7 @@ class CalibratedPrediction:
 
     sample_id: str
     predicted_probability: float  # calibrated P(resistance) or P(affinity_decrease)
-    predicted_direction: str      # "increase", "decrease", "unchanged"
+    predicted_direction: str  # "increase", "decrease", "unchanged"
     confidence_interval_low: float | None = None
     confidence_interval_high: float | None = None
     is_out_of_distribution: bool = False
@@ -46,28 +47,29 @@ class DomainKnowledgeCalibrator:
 
     # Domain-knowledge coefficients (will be replaced by training)
     # Positive coefficient → increases P(resistance)
-    COEFFICIENTS: dict[str, float] = {
-        "volume_delta": -0.003,          # volume decrease → slight risk increase
-        "polarity_added": 0.10,          # new polarity → more interactions possible
+    # ClassVar: shared constant table, never mutated per-instance.
+    COEFFICIENTS: ClassVar[dict[str, float]] = {
+        "volume_delta": -0.003,  # volume decrease → slight risk increase
+        "polarity_added": 0.10,  # new polarity → more interactions possible
         "polarity_removed": 0.05,
-        "charge_delta": 0.15,            # charge change → significant effect
+        "charge_delta": 0.15,  # charge change → significant effect
         "aromatic_added": 0.10,
-        "hbond_donor_gained": 0.12,      # new H-bond capability
+        "hbond_donor_gained": 0.12,  # new H-bond capability
         "hbond_acceptor_gained": 0.08,
-        "contact_count_delta": -0.05,     # contact loss → risk
+        "contact_count_delta": -0.05,  # contact loss → risk
         "atoms_lost": 0.03,
         "atoms_gained": 0.02,
-        "nearest_ligand_distance": -0.02, # closer = more impact
+        "nearest_ligand_distance": -0.02,  # closer = more impact
         "neighborhood_4a_count": 0.01,
-        "is_catalytic": 0.20,            # catalytic site → high impact
-        "is_ligand_contact": 0.15,       # direct contact → high impact
+        "is_catalytic": 0.20,  # catalytic site → high impact
+        "is_ligand_contact": 0.15,  # direct contact → high impact
         "is_pocket_lining": 0.08,
         "pocket_catalytic_in_4a": 0.10,
         "ligand_heavy_atoms": 0.001,
         "ligand_hbond_donors": 0.01,
         "ligand_hbond_acceptors": 0.01,
         "ligand_charge": 0.02,
-        "direct_evidence_count": 0.10,    # literature support → higher confidence
+        "direct_evidence_count": 0.10,  # literature support → higher confidence
         "strong_evidence_count": 0.05,
         "any_literature": 0.10,
     }
@@ -83,15 +85,17 @@ class DomainKnowledgeCalibrator:
         names = FeatureVector.feature_names()
 
         logit = self.INTERCEPT
-        for name, value in zip(names, arr):
+        # names/to_array() are the two parallel definitions of FeatureVector
+        # (equal length by construction) — strict guards against drift.
+        for name, value in zip(names, arr, strict=True):
             coef = self.COEFFICIENTS.get(name, 0.0)
             logit += coef * value
 
         probability = _sigmoid(logit)
         probability = round(max(0.01, min(0.99, probability)), 3)
 
-        direction = "increased" if probability >= 0.55 else (
-            "decreased" if probability <= 0.45 else "unchanged"
+        direction = (
+            "increased" if probability >= 0.55 else ("decreased" if probability <= 0.45 else "unchanged")
         )
 
         # OOD check: if no features are non-zero, we can't predict
@@ -102,15 +106,13 @@ class DomainKnowledgeCalibrator:
             sample_id=features.sample_id,
             predicted_probability=probability,
             predicted_direction=direction,
-            confidence_interval_low=None,   # requires bootstrap for CI
+            confidence_interval_low=None,  # requires bootstrap for CI
             confidence_interval_high=None,
             is_out_of_distribution=ood,
             ood_reason="No structural features available — all feature values are zero" if ood else "",
         )
 
-    def predict_batch(
-        self, features_list: list[FeatureVector]
-    ) -> list[CalibratedPrediction]:
+    def predict_batch(self, features_list: list[FeatureVector]) -> list[CalibratedPrediction]:
         """Batch prediction."""
         return [self.predict(f) for f in features_list]
 
