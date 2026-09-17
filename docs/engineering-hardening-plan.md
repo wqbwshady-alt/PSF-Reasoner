@@ -471,9 +471,11 @@ from starlette.responses import JSONResponse
 MAX_BODY_BYTES = 50 * 1024 * 1024
 MAX_PDB_DATA_CHARS = 18_000_000
 
+
 class CloudComputeRequest(BaseModel):
     pdb_data: str = Field(max_length=MAX_PDB_DATA_CHARS)
     params: dict = Field(default_factory=dict)
+
 
 def _verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
     """Enforce the configured API key; fail closed when unconfigured."""
@@ -481,6 +483,7 @@ def _verify_api_key(x_api_key: str | None = Header(default=None)) -> None:
         raise HTTPException(503, "PSF_CLOUD_SECRET not configured — compute endpoints are disabled")
     if x_api_key != CLOUD_API_SECRET:
         raise HTTPException(401, "unauthorized")
+
 
 class _BodyLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
@@ -690,9 +693,7 @@ class TestUploadMaintenance:
         resp = client.post("/admin/maintain-uploads")
         assert resp.status_code == 404
 
-    def test_startup_cleanup_removes_expired_uploads(
-        self, structure_file: Path, tmp_path: Path
-    ) -> None:
+    def test_startup_cleanup_removes_expired_uploads(self, structure_file: Path, tmp_path: Path) -> None:
         import os
         import time
 
@@ -843,7 +844,7 @@ class TestV3Repository:
         # Age the old row directly.
         import sqlite3
 
-        cutoff = (time.time() - 60 * 60 * 48)
+        cutoff = time.time() - 60 * 60 * 48
         with sqlite3.connect(str(tmp_path / "reports.db")) as conn:
             conn.execute(
                 "UPDATE v3_reports SET generated_at = ? WHERE report_id = ?",
@@ -987,8 +988,7 @@ class V3ReportRepository:
             self._init_db()
             with self._connection() as conn:
                 conn.execute(
-                    "INSERT OR REPLACE INTO v3_reports(report_id, generated_at, payload) "
-                    "VALUES (?, ?, ?)",
+                    "INSERT OR REPLACE INTO v3_reports(report_id, generated_at, payload) VALUES (?, ?, ?)",
                     (
                         report_id,
                         datetime.now(UTC).isoformat(),
@@ -1025,13 +1025,11 @@ class V3ReportRepository:
         with self._lock:
             self._init_db()
             with self._connection() as conn:
-                rows = conn.execute(
-                    "SELECT report_id FROM v3_reports ORDER BY generated_at DESC"
-                ).fetchall()
+                rows = conn.execute("SELECT report_id FROM v3_reports ORDER BY generated_at DESC").fetchall()
             return tuple(row[0] for row in rows)
 
     def prune_old(self, max_age_seconds: float) -> int:
-        cutoff = (time.time() - max_age_seconds)
+        cutoff = time.time() - max_age_seconds
         with self._lock:
             self._init_db()
             with self._connection() as conn:
@@ -1046,12 +1044,8 @@ class V3ReportRepository:
             return
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._connection() as conn:
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
-            )
-            row = conn.execute(
-                "SELECT value FROM schema_meta WHERE key = 'schema_version'"
-            ).fetchone()
+            conn.execute("CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            row = conn.execute("SELECT value FROM schema_meta WHERE key = 'schema_version'").fetchone()
             version = int(row[0]) if row else 0
             for target in range(version + 1, SCHEMA_VERSION + 1):
                 for statement in _MIGRATIONS[target - 1]:
@@ -1148,9 +1142,10 @@ def _post_file(client: TestClient, name: str, content: bytes, fields: dict | Non
 
 def test_valid_pdb_upload_accepted(tmp_path: Path) -> None:
     client = _client(tmp_path)
-    with open(REPO_ROOT / "examples/data/1sdt.cif", "rb") as f1, open(
-        REPO_ROOT / "examples/data/1sdv.cif", "rb"
-    ) as f2:
+    with (
+        open(REPO_ROOT / "examples/data/1sdt.cif", "rb") as f1,
+        open(REPO_ROOT / "examples/data/1sdv.cif", "rb") as f2,
+    ):
         resp = client.post(
             "/v3/analyze-upload",
             files={
@@ -1251,30 +1246,18 @@ def validate_structure_file(path: Path | str) -> None:
     try:
         structure = gemmi.read_structure(str(path))
     except Exception as exc:
-        raise InvalidStructureError(
-            f"structure file cannot be parsed: {type(exc).__name__}"
-        ) from exc
+        raise InvalidStructureError(f"structure file cannot be parsed: {type(exc).__name__}") from exc
 
     model_count = len(structure)
     if model_count < 1:
         raise InvalidStructureError("structure contains no models")
     if model_count > MAX_STRUCTURE_MODELS:
-        raise InvalidStructureError(
-            f"structure has {model_count} models (limit {MAX_STRUCTURE_MODELS})"
-        )
-    atom_count = sum(
-        1
-        for model in structure
-        for chain in model
-        for residue in chain
-        for _ in residue
-    )
+        raise InvalidStructureError(f"structure has {model_count} models (limit {MAX_STRUCTURE_MODELS})")
+    atom_count = sum(1 for model in structure for chain in model for residue in chain for _ in residue)
     if atom_count == 0:
         raise InvalidStructureError("structure contains no atoms")
     if atom_count > MAX_STRUCTURE_ATOMS:
-        raise InvalidStructureError(
-            f"structure has {atom_count} atoms (limit {MAX_STRUCTURE_ATOMS})"
-        )
+        raise InvalidStructureError(f"structure has {atom_count} atoms (limit {MAX_STRUCTURE_ATOMS})")
 ```
 
 注意 gemmi 解析失败时其异常消息可能含路径——只用 `type(exc).__name__`,不转发消息。gemmi 对部分畸形文件可能宽容(把文本当 PDB 读入但 0 原子)——0 原子检查兜底。空文件:`read_structure` 会抛(文件格式无法识别)或 0 模型,两路都被拒。
@@ -1417,9 +1400,7 @@ def test_health_reports_component_status(tmp_path: Path) -> None:
     assert "reasoning_engine" in data["components"]
 
 
-def test_cloud_provider_failure_is_logged_not_suppressed(
-    monkeypatch, caplog
-) -> None:
+def test_cloud_provider_failure_is_logged_not_suppressed(monkeypatch, caplog) -> None:
     from psf_reasoner.physical.cloud_provider import CloudEvidenceProvider
 
     class BrokenAdapter:

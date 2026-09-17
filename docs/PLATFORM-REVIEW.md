@@ -371,8 +371,10 @@ if request.mutation.notation != "V82A" or request.ligand.identifier.upper() != "
 
 ```python
 lit_summary = get_evidence_summary(
-    "HIV-1_PROTEASE" if "MK1" in resolved.ligand.identifier.upper()
-    else "DHFR" if "MTX" in resolved.ligand.identifier.upper()
+    "HIV-1_PROTEASE"
+    if "MK1" in resolved.ligand.identifier.upper()
+    else "DHFR"
+    if "MTX" in resolved.ligand.identifier.upper()
     else "",
     resolved.mutation.notation,
 )
@@ -395,7 +397,7 @@ key = protein_family.upper().strip()
 entries = _CURATED_EVIDENCE.get(key, [])
 if not entries:
     for k in _CURATED_EVIDENCE:
-        if key in k or k in key:      # ← 空串时 "".__contains__ 恒真
+        if key in k or k in key:  # ← 空串时 "".__contains__ 恒真
             entries = _CURATED_EVIDENCE[k]
             break
 ```
@@ -472,12 +474,12 @@ query_evidence("TEM1_BLAC")   -> []
 
 ```python
 try:
-    wt_ligand = wt_struct.locate_ligand_by_identifier(case.ligand_id)   # 找 DRV
+    wt_ligand = wt_struct.locate_ligand_by_identifier(case.ligand_id)  # 找 DRV
 except ValueError:
     # 找不到就"回退到结构中任意非标准残基"
     for r in wt_struct.residues:
         if r.is_hetero and rname not in std_aa and len(rname) <= 3:
-            wt_ligand = r        # ← 拿到 MK1，但后续当作 DRV 使用
+            wt_ligand = r  # ← 拿到 MK1，但后续当作 DRV 使用
             break
 ```
 

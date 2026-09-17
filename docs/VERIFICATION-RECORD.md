@@ -168,7 +168,7 @@ def _auto_llm_provider() -> LLMProvider | None:
         return None
     provider_name = os.environ.get("PSF_LLM_PROVIDER", "deepseek")
     ...
-    return DeepSeekProvider()          # -> httpx.post("https://api.deepseek.com/...")
+    return DeepSeekProvider()  # -> httpx.post("https://api.deepseek.com/...")
 ```
 
 本机环境**恰好**设置了：
